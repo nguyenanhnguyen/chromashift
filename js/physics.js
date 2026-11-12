@@ -1,5 +1,5 @@
 // ChromaShift Physics Engine
-// Physically-correct Blinn-Phong shading with pigment color model
+// Physically-based multi-light Blinn-Phong shading with pigment color model
 'use strict';
 
 var Physics = (function () {
@@ -11,6 +11,13 @@ var Physics = (function () {
     sub: function (a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; },
     mul: function (a, s) { return { x: a.x * s, y: a.y * s, z: a.z * s }; },
     dot: function (a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; },
+    cross: function (a, b) {
+      return {
+        x: a.y * b.z - a.z * b.y,
+        y: a.z * b.x - a.x * b.z,
+        z: a.x * b.y - a.y * b.x
+      };
+    },
     len: function (a) { return Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z); },
     norm: function (a) {
       var l = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
@@ -82,87 +89,68 @@ var Physics = (function () {
     }
   };
 
-  // ── Blinn-Phong shading ────────────────────────────────────────────────────
-  function phong(P, N, rayDir, lightPos, lightRgb, albedoRgb, metallic, roughness) {
-    // View direction toward camera
-    var V = v3.norm(v3.neg(rayDir));
-
-    // Light direction
-    var LP = v3.sub(lightPos, P);
-    var dist = v3.len(LP);
-    var L = v3.norm(LP);
-
-    // Blinn-Phong half-vector
-    var H = v3.norm(v3.add(L, V));
-
-    // Dot products (clamped to 0)
-    var NdotL = Math.max(0, v3.dot(N, L));
-    var NdotH = Math.max(0, v3.dot(N, H));
+  // ── Multi-light Blinn-Phong shading with environment reflection ───────────
+  // lights: [{ pos:{x,y,z}, rgb:{r,g,b}, intensity }]
+  // reflEnv: {r,g,b} color picked up by a one-bounce reflection ray (neighbouring
+  //          objects / sky) — lets metallic/glossy surfaces show their surroundings.
+  function shadeMulti(P, N, viewDir, lights, albedoRgb, metallic, roughness, reflEnv) {
+    var V = v3.norm(v3.neg(viewDir));
     var NdotV = Math.max(0, v3.dot(N, V));
 
-    // Attenuation
-    var atten = 1 / (1 + 0.03 * dist * dist);
-
-    // Colors
-    var diffCol = col.pigment(lightRgb, albedoRgb);
-    var specCol = col.lerp({ r: 255, g: 255, b: 255 }, diffCol, metallic);
-
-    // Shininess from roughness
-    var roughSq = roughness * roughness;
+    var roughSq = Math.max(0.0025, roughness * roughness);
     var shininess = Math.max(1, Math.min(2000, 2 / roughSq - 2));
 
-    // Fresnel (Schlick approximation)
+    // Fresnel (Schlick approximation) — how mirror-like the surface is at this angle
     var F0 = 0.04 + metallic * 0.96;
     var fresnel = F0 + (1 - F0) * Math.pow(1 - NdotV, 5);
 
-    // Warm/cool complementary ambient fill
-    var ambRgb = {
-      r: 20 + (255 - lightRgb.r) * 0.07,
-      g: 20 + (255 - lightRgb.g) * 0.07,
-      b: 20 + (255 - lightRgb.b) * 0.07
-    };
+    var total = { r: 0, g: 0, b: 0 };
 
-    // Lighting components
-    var ambient  = col.mul(col.pigment(ambRgb, albedoRgb), 0.08 + metallic * 0.03);
-    var diffuse  = col.mul(diffCol, NdotL * atten * (1 - metallic * 0.5));
-    var specular = col.mul(specCol, Math.pow(NdotH, shininess) * atten * fresnel);
+    for (var i = 0; i < lights.length; i++) {
+      var light = lights[i];
+      var LP = v3.sub(light.pos, P);
+      var dist = v3.len(LP);
+      var L = v3.norm(LP);
+      var H = v3.norm(v3.add(L, V));
 
-    return col.add(ambient, col.add(diffuse, specular));
+      var NdotL = Math.max(0, v3.dot(N, L));
+      var NdotH = Math.max(0, v3.dot(N, H));
+
+      var atten = (light.intensity !== undefined ? light.intensity : 1) /
+                  (1 + 0.045 * dist * dist);
+
+      var diffCol = col.pigment(light.rgb, albedoRgb);
+      var specCol = col.lerp({ r: 255, g: 255, b: 255 }, diffCol, metallic);
+
+      var diffuse  = col.mul(diffCol, NdotL * atten * (1 - metallic * 0.6));
+      var specular = col.mul(specCol, Math.pow(NdotH, shininess) * atten * fresnel);
+
+      total = col.add(total, col.add(diffuse, specular));
+    }
+
+    // Faint ambient so unlit sides aren't pure black
+    total = col.add(total, col.mul(albedoRgb, 0.035));
+
+    // Environment reflection: glossier + more metallic ⇒ sees its surroundings more clearly
+    if (reflEnv) {
+      var reflAmt = fresnel * (0.12 + metallic * 0.88) * Math.pow(1 - roughness, 1.4);
+      total = col.add(total, col.mul(reflEnv, reflAmt));
+    }
+
+    return col.clamp(total);
   }
 
-  // ── Zone colours for preview swatches ─────────────────────────────────────
-  function computeZones(lightRgb, albedoRgb, metallic, roughness, intensity) {
-    if (intensity === undefined) intensity = 1.0;
-
-    var diffCol = col.pigment(lightRgb, albedoRgb);
-    var specCol = col.lerp({ r: 255, g: 255, b: 255 }, diffCol, metallic);
-
-    var ambRgb = {
-      r: 20 + (255 - lightRgb.r) * 0.07,
-      g: 20 + (255 - lightRgb.g) * 0.07,
-      b: 20 + (255 - lightRgb.b) * 0.07
-    };
-
-    var shadow    = col.mul(col.pigment(ambRgb, albedoRgb), 0.08);
-    var lit       = col.mul(diffCol, intensity * (1 - metallic * 0.5));
-    var mid       = col.lerp(col.mul(albedoRgb, 0.35), lit, 0.5);
-    var highlight = col.add(lit, col.mul(specCol, (0.4 + metallic * 0.7) * intensity));
-
-    return { highlight: highlight, lit: lit, mid: mid, shadow: shadow };
-  }
-
-  // ── Intensity from distance ────────────────────────────────────────────────
+  // ── Intensity falloff helper (used by UI previews) ─────────────────────────
   function intensityFromDistance(dist) {
-    var v = 0.22 / (dist * dist + 0.07);
-    return Math.max(0.15, Math.min(1.0, v));
+    var v = 0.9 / (dist * dist + 0.2);
+    return Math.max(0.1, Math.min(1.0, v));
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
   return {
     v3: v3,
     col: col,
-    phong: phong,
-    computeZones: computeZones,
+    shadeMulti: shadeMulti,
     intensityFromDistance: intensityFromDistance
   };
 

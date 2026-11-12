@@ -13,234 +13,60 @@
   <!-- ═══ HEADER ═══ -->
   <div class="header">
     <h1>⚗️ ChromaShift — Light &amp; Color Reflection Lab</h1>
-    <span class="badge">Interactive Physics</span>
+    <span class="badge">3D Physically-Based</span>
   </div>
 
   <!-- ═══ MAIN GRID ═══ -->
   <div class="main-grid">
 
-    <!-- ── STAGE ── -->
+    <!-- ── STAGE (3D viewport) ── -->
     <div class="stage-container" id="stage">
-
-      <!--
-        SVG overlay — z-index 3
-        Vẽ: hình nón ánh sáng (polygon) + tia phản xạ (line)
-        Tọa độ được cập nhật theo vị trí lamp & object trong JS.
-      -->
-      <svg class="stage-svg" id="stageSvg" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <!-- Blur cho hình nón ánh sáng -->
-          <filter id="coneBlur" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="7"/>
-          </filter>
-          <!-- Glow cho tia phản xạ -->
-          <filter id="rayGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="2.5" result="blur"/>
-            <feMerge>
-              <feMergeNode in="blur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-        </defs>
-
-        <!-- Hình nón ánh sáng từ đèn → vật thể -->
-        <polygon id="conePolygon"
-                 opacity="0.26"
-                 filter="url(#coneBlur)"
-                 points="250,46 182,330 318,330"/>
-
-        <!-- Tia phản xạ từ vật thể → mắt người quan sát -->
-        <line id="rayLine"
-              stroke-width="3"
-              stroke-linecap="round"
-              opacity="0.78"
-              filter="url(#rayGlow)"
-              x1="250" y1="332" x2="430" y2="362"/>
-      </svg>
-
-      <!--
-        LAMP — kéo-thả tự do trong stage
-        Vị trí được set bằng left/top (%) qua JS.
-        Photon stream bên trong được xoay hướng về vật thể.
-      -->
-      <div class="lamp-drag" id="lamp">
-        <div class="lamp-housing">
-          <div class="lamp-bulb" id="bulb"></div>
-        </div>
-        <span class="drag-hint">☀️ kéo đèn</span>
-
-        <!--
-          Photon stream: transform-origin (0,0) = điểm phát sáng (đầu bóng đèn).
-          Được xoay bởi JS để hướng photon về phía vật thể.
-        -->
-        <div class="photon-stream" id="photonStream">
-          <!-- Photons được tạo động bởi main.js -->
-        </div>
-      </div>
-
-      <!--
-        OBJECT — kéo-thả tự do trong stage
-        Gradient màu được cập nhật theo hướng ánh sáng.
-      -->
-      <div class="obj-drag" id="objDrag">
-        <!--
-          Badge hiển thị màu phản xạ trực tiếp trên vật thể.
-          Màu nền = màu phản xạ; text tự động đổi trắng/đen cho dễ đọc.
-        -->
-        <div class="obj-color-badge" id="objColorBadge">#000</div>
-
-        <!--
-          simObject: background gradient được tính toán bởi stage.js
-          dựa trên:
-            - hướng vector ánh sáng (nx, ny)
-            - lighting zones: lit, midLight, objectNatural, shadow
-          Phía gần đèn → màu lit (phản xạ)
-          Phía xa đèn  → màu shadow (tối, giữ hue gốc)
-        -->
-        <div class="sim-object" id="simObject"></div>
-
-        <span class="drag-hint">↔↕ kéo vật</span>
-      </div>
-
-      <!--
-        OBSERVER — cố định góc dưới-phải
-        Nhận tia phản xạ từ vật thể.
-        Label hiển thị hex màu mà mắt người thực sự thấy.
-      -->
-      <div class="observer" id="observer">
-        <div class="eye-icon" title="Màu mắt người nhìn thấy">👁️</div>
-        <div class="obs-label" id="obsLabel">#000</div>
-      </div>
-
-      <!-- Bóng đổ dưới vật — vị trí và màu cập nhật theo vật thể & ánh sáng -->
-      <div class="floor-shadow" id="floorShadow"></div>
-
+      <canvas id="canvas3d" width="480" height="440"></canvas>
+      <div class="stage-hint">🖱️ Trái: kéo vật · Giữa: pan · Phải: xoay · Cuộn: zoom</div>
+      <button class="eyedrop-fab" id="btnEyedrop" title="Lấy mẫu màu bất kỳ trên màn hình">🎨</button>
     </div><!-- /stage -->
 
     <!-- ── CONTROLS ── -->
     <div class="controls-panel">
 
-      <!-- 1. Màu Ánh Sáng -->
+      <!-- 0. Color Picker / Eyedropper result -->
       <div class="control-section">
         <div class="section-header">
-          <span class="section-title">1. Màu Ánh Sáng (Light)</span>
-          <span id="lightHex" class="hex-code">#FFFFFF</span>
+          <span class="section-title">🎨 Công Cụ Chọn Màu</span>
         </div>
-        <div class="color-row">
-          <input type="color" id="lightColor" value="#ffffff">
-          <div class="presets">
-            <button class="preset-btn" style="background:#ffffff" title="Trắng"       onclick="setLight('#ffffff')"></button>
-            <button class="preset-btn" style="background:#ff3300" title="Đỏ"          onclick="setLight('#ff3300')"></button>
-            <button class="preset-btn" style="background:#00cc44" title="Xanh lá"    onclick="setLight('#00cc44')"></button>
-            <button class="preset-btn" style="background:#1a66ff" title="Xanh dương" onclick="setLight('#1a66ff')"></button>
-            <button class="preset-btn" style="background:#ffdd00" title="Vàng"        onclick="setLight('#ffdd00')"></button>
-            <button class="preset-btn" style="background:#00eeff" title="Lục lam"    onclick="setLight('#00eeff')"></button>
-            <button class="preset-btn" style="background:#ff00cc" title="Magenta"    onclick="setLight('#ff00cc')"></button>
-            <button class="preset-btn" style="background:#ff6600" title="Cam"         onclick="setLight('#ff6600')"></button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 2. Màu Vật Thể -->
-      <div class="control-section">
-        <div class="section-header">
-          <span class="section-title">2. Màu Vật Thể (Object)</span>
-          <span id="objectHex" class="hex-code">#E63333</span>
-        </div>
-        <div class="color-row">
-          <input type="color" id="objectColor" value="#e63333">
-          <div class="presets">
-            <button class="preset-btn" style="background:#ffffff"                     title="Trắng"      onclick="setObject('#ffffff')"></button>
-            <button class="preset-btn" style="background:#111;border-color:#555"      title="Đen"        onclick="setObject('#111111')"></button>
-            <button class="preset-btn" style="background:#e63333"                     title="Đỏ"         onclick="setObject('#e63333')"></button>
-            <button class="preset-btn" style="background:#33cc55"                     title="Xanh lá"   onclick="setObject('#33cc55')"></button>
-            <button class="preset-btn" style="background:#2255dd"                     title="Xanh dương" onclick="setObject('#2255dd')"></button>
-            <button class="preset-btn" style="background:#f5a623"                     title="Cam"        onclick="setObject('#f5a623')"></button>
-            <button class="preset-btn" style="background:#9b59b6"                     title="Tím"        onclick="setObject('#9b59b6')"></button>
-            <button class="preset-btn" style="background:#888888"                     title="Xám"        onclick="setObject('#888888')"></button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 3. Hình Dạng -->
-      <div class="control-section">
-        <div class="section-header">
-          <span class="section-title">3. Hình Dạng Vật Thể</span>
-        </div>
-        <div class="shape-selector">
-          <button class="shape-btn active" id="btn-sphere" onclick="setShape('sphere')">
-            <span class="shape-icon">⚽</span>Hình cầu
-          </button>
-          <button class="shape-btn" id="btn-cube" onclick="setShape('cube')">
-            <span class="shape-icon">🧊</span>Hình hộp
-          </button>
-          <button class="shape-btn" id="btn-prism" onclick="setShape('prism')">
-            <span class="shape-icon">🔺</span>Lăng kính
-          </button>
-        </div>
-      </div>
-
-      <!-- 4. Metallic / Độ bóng -->
-      <div class="control-section">
-        <div class="section-header">
-          <span class="section-title">4. Độ Bóng (Metallic)</span>
-          <span id="metallicValue" class="hex-code">0%</span>
-        </div>
-
-        <!-- Thanh trượt chính -->
-        <div class="slider-row">
-          <span class="slider-end-label">🧱</span>
-          <input type="range" id="metallicSlider" class="metallic-slider"
-                 min="0" max="100" value="0" step="1">
-          <span class="slider-end-label">🪞</span>
-        </div>
-        <div class="slider-sublabels">
-          <span>Matte</span>
-          <span>Glossy</span>
-          <span>Metal</span>
-        </div>
-
-        <!-- Thanh phân chia Diffuse vs Specular -->
-        <div class="mat-split-row">
-          <span class="mat-split-label">Diffuse</span>
-          <div class="mat-split-track">
-            <div class="mat-split-fill diffuse" id="diffuseBar"  style="width:100%"></div>
-            <div class="mat-split-fill specular" id="specularBar" style="width:0%"></div>
-          </div>
-          <span class="mat-split-label">Specular</span>
-        </div>
-      </div>
-
-      <!-- 5. Kết Quả -->
-      <div class="result-box">
-        <div class="result-title">👁️ Màu Mắt Người Nhìn Thấy</div>
-        <div class="result-preview">
-          <div class="swatch-box" id="resultSwatch"></div>
-          <div class="rgb-bars">
-            <div class="bar-row">
-              <span class="bar-label" style="color:#f87171">R</span>
-              <div class="bar-track"><div class="bar-fill" id="barR" style="background:#f87171;width:0%"></div></div>
-              <span class="bar-value" id="valR">0</span>
-            </div>
-            <div class="bar-row">
-              <span class="bar-label" style="color:#4ade80">G</span>
-              <div class="bar-track"><div class="bar-fill" id="barG" style="background:#4ade80;width:0%"></div></div>
-              <span class="bar-value" id="valG">0</span>
-            </div>
-            <div class="bar-row">
-              <span class="bar-label" style="color:#60a5fa">B</span>
-              <div class="bar-track"><div class="bar-fill" id="barB" style="background:#60a5fa;width:0%"></div></div>
-              <span class="bar-value" id="valB">0</span>
+        <div class="picker-row">
+          <div class="swatch-box" id="pickedSwatch"></div>
+          <div class="picker-info">
+            <div class="result-hex" id="pickedHex">#000000</div>
+            <div class="picker-actions">
+              <button class="small-btn" id="btnEyedrop2">Lấy màu màn hình</button>
+              <button class="small-btn" id="btnCopyHex">Copy mã màu</button>
             </div>
           </div>
         </div>
-        <div class="result-hex" id="resultHex">#000000</div>
-        <div class="formula-hint">
-          Màu phản xạ = Ánh sáng × Hệ số vật thể<br>
-          <code>R = R_L × R_O / 255</code> &nbsp;
-          <code>G = G_L × G_O / 255</code> &nbsp;
-          <code>B = B_L × B_O / 255</code>
+        <p class="hint-text">Click vào vật thể trong khung 3D để lấy đúng màu đang hiển thị tại điểm đó (dưới điều kiện ánh sáng hiện tại), hoặc dùng nút “Lấy màu màn hình” để hút màu từ bất kỳ đâu trên trình duyệt.</p>
+      </div>
+
+      <!-- 1. Lights -->
+      <div class="control-section">
+        <div class="section-header">
+          <span class="section-title">💡 Nguồn Sáng</span>
+          <button class="small-btn" id="btnAddLight">+ Thêm đèn</button>
         </div>
+        <div class="item-list" id="lightsList"></div>
+      </div>
+
+      <!-- 2. Objects -->
+      <div class="control-section">
+        <div class="section-header">
+          <span class="section-title">🧊 Vật Thể</span>
+          <button class="small-btn" id="btnAddObject">+ Thêm vật</button>
+        </div>
+        <div class="item-list" id="objectsList"></div>
+      </div>
+
+      <div class="formula-hint">
+        Màu quan sát = Σ (Ánh sáng × Albedo × Khuếch tán) + Specular (Fresnel · Blinn-Phong) + Phản chiếu môi trường (vật/đèn xung quanh)
       </div>
 
     </div><!-- /controls-panel -->
@@ -248,14 +74,15 @@
 
   <!-- ═══ FOOTER ═══ -->
   <div class="footer-bar">
-    <span><span class="dot"></span>Thời gian thực · Kéo đèn &amp; vật thể để di chuyển tự do</span>
-    <span>ChromaShift v2.0 · Vật lý màu sắc ánh sáng</span>
+    <span><span class="dot"></span>Thời gian thực · Nhiều nguồn sáng &amp; vật thể tương tác lẫn nhau</span>
+    <span>ChromaShift v4.0 · 3D Raytracer</span>
   </div>
 
 </div><!-- /app-container -->
 
-<!-- Thứ tự load: physics (không phụ thuộc) → stage (dùng Physics) → main (dùng cả hai) -->
+<!-- Thứ tự load: physics (không phụ thuộc) → renderer3d (dùng Physics) → stage (dùng Renderer3D để pan) → main -->
 <script src="js/physics.js"></script>
+<script src="js/renderer3d.js"></script>
 <script src="js/stage.js"></script>
 <script src="js/main.js"></script>
 </body>

@@ -1,64 +1,32 @@
 'use strict';
 
+/**
+ * renderer3d.js — ChromaShift 3D raytracer
+ *
+ * Renders an arbitrary number of objects lit by an arbitrary number of
+ * lights, with one-bounce environment reflection so glossy / metallic
+ * surfaces visibly pick up the color of neighbouring objects and lights.
+ */
 var Renderer3D = (function () {
 
-  // ── Constants ────────────────────────────────────────────────────────────────
-  var CAM_POS = { x: 0, y: 0, z: 5 };
-  var CAM_FOV = 50 * Math.PI / 180;
+  var CAM_FOV = 46 * Math.PI / 180;
   var EPS     = 1e-4;
 
-  // ── Geometry catalogue ───────────────────────────────────────────────────────
-  var GEO = {
-    sphere:   { type: 'sphere',   R: 1.2 },
-    cube:     { type: 'cube',     min: { x: -.9, y: -.9, z: -.9 }, max: { x: .9, y: .9, z: .9 } },
-    cylinder: { type: 'cylinder', r: .75, ymin: -1.0, ymax: 1.0 },
-    cone:     { type: 'cone',     r: .9,  h: 1.9, apexY: .95 },
-    torus:    { type: 'torus',    R: .8,  r: .35 },
-    plane:    { type: 'plane' }
-  };
-
-  // ── Camera ───────────────────────────────────────────────────────────────────
-  function genRay(px, py, W, H) {
-    var scale = Math.tan(CAM_FOV / 2);
-    var nx = ((px + 0.5) / W * 2 - 1) * (W / H) * scale;
-    var ny = (1 - (py + 0.5) / H * 2) * scale;
-    return {
-      orig: { x: CAM_POS.x, y: CAM_POS.y, z: CAM_POS.z },
-      dir:  Physics.v3.norm({ x: nx, y: ny, z: -1 })
-    };
+  // ── Geometry catalogue (unit-scale, centered at local origin) ─────────────
+  function buildGeo(shape, scale) {
+    scale = scale || 1;
+    switch (shape) {
+      case 'sphere':   return { type: 'sphere',   R: 1.0 * scale };
+      case 'cube':     return { type: 'cube',     min: { x: -.75 * scale, y: -.75 * scale, z: -.75 * scale },
+                                                    max: { x:  .75 * scale, y:  .75 * scale, z:  .75 * scale } };
+      case 'cylinder': return { type: 'cylinder', r: .7 * scale, ymin: -.9 * scale, ymax: .9 * scale };
+      case 'cone':     return { type: 'cone',     r: .85 * scale, h: 1.7 * scale, apexY: .85 * scale };
+      case 'torus':    return { type: 'torus',    R: .75 * scale, r: .3 * scale };
+      default:         return { type: 'sphere',   R: 1.0 * scale };
+    }
   }
 
-  // ── Rotation helpers ─────────────────────────────────────────────────────────
-  // Object-space → World-space: R_X(rx) then R_Y(ry)
-  function oToW(v, rx, ry) {
-    var x = v.x, y = v.y, z = v.z;
-    // R_X(rx)
-    var crx = Math.cos(rx), srx = Math.sin(rx);
-    var y1 = y * crx - z * srx;
-    var z1 = y * srx + z * crx;
-    // R_Y(ry)
-    var cry = Math.cos(ry), sry = Math.sin(ry);
-    var x2 = x * cry + z1 * sry;
-    var z2 = -x * sry + z1 * cry;
-    return { x: x2, y: y1, z: z2 };
-  }
-
-  // World-space → Object-space: R_Y(-ry) then R_X(-rx)
-  function wToO(v, rx, ry) {
-    var x = v.x, y = v.y, z = v.z;
-    // R_Y(-ry)
-    var cry = Math.cos(-ry), sry = Math.sin(-ry);
-    var x1 = x * cry + z * sry;
-    var z1 = -x * sry + z * cry;
-    // R_X(-rx)
-    var crx = Math.cos(-rx), srx = Math.sin(-rx);
-    var y2 = y * crx - z1 * srx;
-    var z2 = y * srx + z1 * crx;
-    return { x: x1, y: y2, z: z2 };
-  }
-
-  // ── Shape intersectors ───────────────────────────────────────────────────────
-
+  // ── Shape intersectors (local object space) ────────────────────────────────
   function hitSphere(ray, R) {
     var o = ray.orig, d = ray.dir;
     var b = Physics.v3.dot(o, d);
@@ -83,23 +51,12 @@ var Renderer3D = (function () {
     for (var i = 0; i < 3; i++) {
       var ax = axes[i];
       var inv = Math.abs(d[ax]) > 1e-8 ? 1 / d[ax] : (d[ax] >= 0 ? 1 / 1e-8 : -1 / 1e-8);
-
       var t0 = (box.min[ax] - o[ax]) * inv;
       var t1 = (box.max[ax] - o[ax]) * inv;
-
-      // near-normal points inward from the min slab (negative axis direction)
       var n0 = { x: 0, y: 0, z: 0 };
       n0[ax] = -1;
-
-      if (inv < 0) {
-        var tmp = t0; t0 = t1; t1 = tmp;
-        n0[ax] = 1;
-      }
-
-      if (t0 > tmin) {
-        tmin = t0;
-        N = { x: n0.x, y: n0.y, z: n0.z };
-      }
+      if (inv < 0) { var tmp = t0; t0 = t1; t1 = tmp; n0[ax] = 1; }
+      if (t0 > tmin) { tmin = t0; N = { x: n0.x, y: n0.y, z: n0.z }; }
       if (t1 < tmax) tmax = t1;
     }
 
@@ -115,10 +72,8 @@ var Renderer3D = (function () {
     var ox = o.x, oy = o.y, oz = o.z;
     var dx = d.x, dy = d.y, dz = d.z;
     var r = cyl.r, ymin = cyl.ymin, ymax = cyl.ymax;
-
     var best = null;
 
-    // Body (xz quadratic)
     var a = dx * dx + dz * dz;
     if (Math.abs(a) > 1e-10) {
       var b = 2 * (ox * dx + oz * dz);
@@ -136,26 +91,12 @@ var Renderer3D = (function () {
             var P = { x: px, y: yh, z: pz };
             var N = { x: px / r, y: 0, z: pz / r };
             if (!best || t < best.t) best = { t: t, P: P, N: N };
-            break; // smallest valid root first
-          }
-        }
-        // If smallest root missed, try largest
-        if (!best) {
-          var t = roots[1];
-          if (t >= EPS) {
-            var yh = oy + t * dy;
-            if (yh >= ymin && yh <= ymax) {
-              var px = ox + t * dx, pz = oz + t * dz;
-              var P = { x: px, y: yh, z: pz };
-              var N = { x: px / r, y: 0, z: pz / r };
-              best = { t: t, P: P, N: N };
-            }
+            break;
           }
         }
       }
     }
 
-    // Caps
     if (Math.abs(dy) > 1e-10) {
       var capYs = [ymin, ymax];
       var capNs = [{ x: 0, y: -1, z: 0 }, { x: 0, y: 1, z: 0 }];
@@ -164,14 +105,10 @@ var Renderer3D = (function () {
         if (t < EPS) continue;
         var cx = ox + t * dx, cz = oz + t * dz;
         if (cx * cx + cz * cz <= r * r) {
-          if (!best || t < best.t) {
-            var P = { x: cx, y: capYs[ci], z: cz };
-            best = { t: t, P: P, N: capNs[ci] };
-          }
+          if (!best || t < best.t) best = { t: t, P: { x: cx, y: capYs[ci], z: cz }, N: capNs[ci] };
         }
       }
     }
-
     return best;
   }
 
@@ -181,13 +118,10 @@ var Renderer3D = (function () {
     var dx = d.x, dy = d.y, dz = d.z;
     var r = cone.r, h = cone.h, apexY = cone.apexY;
     var baseY = apexY - h;
-    var k = r / h;
-    var k2 = k * k;
+    var k = r / h, k2 = k * k;
     var oy_apex = oy - apexY;
-
     var best = null;
 
-    // Lateral surface quadratic
     var a = dx * dx + dz * dz - k2 * dy * dy;
     var b = 2 * (ox * dx + oz * dz - k2 * oy_apex * dy);
     var c = ox * ox + oz * oz - k2 * oy_apex * oy_apex;
@@ -200,32 +134,26 @@ var Renderer3D = (function () {
         for (var i = 0; i < 2; i++) {
           var t = roots[i];
           if (t < EPS) continue;
-          var yl = oy_apex + t * dy; // relative to apex
+          var yl = oy_apex + t * dy;
           if (yl >= -h && yl <= 0) {
             var px = ox + t * dx, pz = oz + t * dz;
-            var ryv = k * (-yl); // radius at this height
-            var P = { x: px, y: oy + t * dy, z: pz };
+            var ryv = k * (-yl);
             var N = Physics.v3.norm({ x: px / ryv, y: k, z: pz / ryv });
-            if (!best || t < best.t) best = { t: t, P: P, N: N };
+            if (!best || t < best.t) best = { t: t, P: { x: px, y: oy + t * dy, z: pz }, N: N };
           }
         }
       }
     }
 
-    // Base cap
     if (Math.abs(dy) > 1e-10) {
       var t = (baseY - oy) / dy;
       if (t >= EPS) {
         var cx = ox + t * dx, cz = oz + t * dz;
         if (cx * cx + cz * cz <= r * r) {
-          if (!best || t < best.t) {
-            var P = { x: cx, y: baseY, z: cz };
-            best = { t: t, P: P, N: { x: 0, y: -1, z: 0 } };
-          }
+          if (!best || t < best.t) best = { t: t, P: { x: cx, y: baseY, z: cz }, N: { x: 0, y: -1, z: 0 } };
         }
       }
     }
-
     return best;
   }
 
@@ -235,48 +163,28 @@ var Renderer3D = (function () {
   }
 
   function hitTorus(ray, torus) {
-    // Bounding sphere check
     if (!hitSphere(ray, torus.R + torus.r + 0.05)) return null;
-
     var o = ray.orig, d = ray.dir;
     var R = torus.R, r = torus.r;
-    var EPS_SDF = 0.0004;
-    var max_t = 12;
     var t = 0.1;
-
-    for (var step = 0; step < 80; step++) {
-      var px = o.x + t * d.x;
-      var py = o.y + t * d.y;
-      var pz = o.z + t * d.z;
+    for (var step = 0; step < 64; step++) {
+      var px = o.x + t * d.x, py = o.y + t * d.y, pz = o.z + t * d.z;
       var dist = torusSDF(px, py, pz, R, r);
-      if (dist < EPS_SDF) {
-        // Gradient normal via central differences
-        var h = 0.0004;
-        var nx = torusSDF(px + h, py, pz, R, r) - torusSDF(px - h, py, pz, R, r);
-        var ny = torusSDF(px, py + h, pz, R, r) - torusSDF(px, py - h, pz, R, r);
-        var nz = torusSDF(px, py, pz + h, R, r) - torusSDF(px, py, pz - h, R, r);
-        var N = Physics.v3.norm({ x: nx, y: ny, z: nz });
-        var P = { x: px, y: py, z: pz };
-        return { t: t, P: P, N: N };
+      if (dist < 0.0006) {
+        var h = 0.0006;
+        var N = Physics.v3.norm({
+          x: torusSDF(px + h, py, pz, R, r) - torusSDF(px - h, py, pz, R, r),
+          y: torusSDF(px, py + h, pz, R, r) - torusSDF(px, py - h, pz, R, r),
+          z: torusSDF(px, py, pz + h, R, r) - torusSDF(px, py, pz - h, R, r)
+        });
+        return { t: t, P: { x: px, y: py, z: pz }, N: N };
       }
-      if (t > max_t) break;
+      if (t > 12) break;
       t += Math.max(dist * 0.85, 0.001);
     }
     return null;
   }
 
-  function hitPlane(ray) {
-    var o = ray.orig, d = ray.dir;
-    if (Math.abs(d.y) < 1e-10) return null;
-    var t = (-1.2 - o.y) / d.y;
-    if (t < EPS) return null;
-    var px = o.x + t * d.x, pz = o.z + t * d.z;
-    if (Math.abs(px) > 1.8 || Math.abs(pz) > 1.8) return null;
-    var P = { x: px, y: -1.2, z: pz };
-    return { t: t, P: P, N: { x: 0, y: 1, z: 0 } };
-  }
-
-  // ── Dispatch ─────────────────────────────────────────────────────────────────
   function intersect(ray, geo) {
     switch (geo.type) {
       case 'sphere':   return hitSphere(ray, geo.R);
@@ -284,15 +192,86 @@ var Renderer3D = (function () {
       case 'cylinder': return hitCylinder(ray, geo);
       case 'cone':     return hitCone(ray, geo);
       case 'torus':    return hitTorus(ray, geo);
-      case 'plane':    return hitPlane(ray);
       default:         return null;
     }
   }
 
-  // ── Background ───────────────────────────────────────────────────────────────
-  function background(py, H) {
-    var t = py / H;
-    return { r: 10 + t * 8, g: 12 + t * 8, b: 18 + t * 14 };
+  // Lights render as small glowing spheres — brighter/more intense lights look bigger.
+  function lightRadius(intensity) {
+    return 0.32 + Math.min(1.2, (intensity || 1) * 0.03);
+  }
+
+  // ── Scene-level intersection across all objects AND light bulbs ────────────
+  // Returns { t, P, N, kind: 'object'|'light', index } for the nearest hit.
+  function intersectAll(ray, objects, lights, skipObjIdx, skipLightIdx) {
+    var best = null, bestKind = null, bestIdx = -1;
+
+    for (var i = 0; i < objects.length; i++) {
+      if (i === skipObjIdx) continue;
+      var obj = objects[i];
+      var local = { orig: Physics.v3.sub(ray.orig, obj.pos), dir: ray.dir };
+      var hit = intersect(local, buildGeo(obj.shape, obj.scale));
+      if (hit && (!best || hit.t < best.t)) { best = hit; bestKind = 'object'; bestIdx = i; }
+    }
+
+    for (var j = 0; j < lights.length; j++) {
+      if (j === skipLightIdx) continue;
+      var light = lights[j];
+      var lLocal = { orig: Physics.v3.sub(ray.orig, light.pos), dir: ray.dir };
+      var lHit = hitSphere(lLocal, lightRadius(light.intensity));
+      if (lHit && (!best || lHit.t < best.t)) { best = lHit; bestKind = 'light'; bestIdx = j; }
+    }
+
+    if (!best) return null;
+    var originPos = bestKind === 'object' ? objects[bestIdx].pos : lights[bestIdx].pos;
+    best.P = Physics.v3.add(best.P, originPos);
+    best.kind = bestKind;
+    best.index = bestIdx;
+    return best;
+  }
+
+  // ── Camera basis (orbit around a pannable target point) ────────────────────
+  function cameraBasis(rotX, rotY, dist, target) {
+    target = target || { x: 0, y: 0, z: 0 };
+    var cx = Math.cos(rotX), sx = Math.sin(rotX);
+    var cy = Math.cos(rotY), sy = Math.sin(rotY);
+    var orbitOffset = { x: dist * cx * sy, y: dist * sx, z: dist * cx * cy };
+    var camPos = Physics.v3.add(target, orbitOffset);
+    var forward = Physics.v3.norm(Physics.v3.neg(orbitOffset));
+    var worldUp = { x: 0, y: 1, z: 0 };
+    var right = Physics.v3.norm(Physics.v3.cross(forward, worldUp));
+    var up = Physics.v3.cross(right, forward);
+    return { pos: camPos, forward: forward, right: right, up: up };
+  }
+
+  // ── Pick the object/light under a screen pixel (for click-to-sample / drag-to-move) ──
+  function pickObject(scene, px, py, W, H) {
+    var basis = cameraBasis(scene.rotX, scene.rotY, scene.dist, scene.target);
+    var ray = genRay(px, py, W, H, basis);
+    var hit = intersectAll(ray, scene.objects || [], scene.lights || [], -1, -1);
+    if (!hit) return null;
+    return { kind: hit.kind, index: hit.index, point: hit.P, normal: basis.forward };
+  }
+
+  function genRay(px, py, W, H, basis) {
+    var scale = Math.tan(CAM_FOV / 2);
+    var nx = ((px + 0.5) / W * 2 - 1) * (W / H) * scale;
+    var ny = (1 - (py + 0.5) / H * 2) * scale;
+    var dir = Physics.v3.norm(Physics.v3.add(
+      basis.forward,
+      Physics.v3.add(Physics.v3.mul(basis.right, nx), Physics.v3.mul(basis.up, ny))
+    ));
+    return { orig: basis.pos, dir: dir };
+  }
+
+  // ── Background sky ──────────────────────────────────────────────────────────
+  function background(dir) {
+    var t = Math.max(0, dir.y * 0.5 + 0.35);
+    return {
+      r: 10 + t * 16,
+      g: 12 + t * 18,
+      b: 20 + t * 30
+    };
   }
 
   // ── Main render ──────────────────────────────────────────────────────────────
@@ -302,37 +281,47 @@ var Renderer3D = (function () {
     var img = ctx.createImageData(W, H);
     var data = img.data;
 
-    var lightPos   = scene.lightPos;
-    var lightRgb   = scene.lightRgb;
-    var albedoRgb  = scene.albedoRgb;
-    var metallic   = scene.metallic;
-    var roughness  = scene.roughness;
-    var rx         = scene.rotX;
-    var ry         = scene.rotY;
-    var geo        = GEO[scene.shape];
+    var objects = scene.objects || [];
+    var lights  = scene.lights  || [];
+    var basis   = cameraBasis(scene.rotX, scene.rotY, scene.dist || 6, scene.target);
 
     for (var py = 0; py < H; py++) {
       for (var px = 0; px < W; px++) {
-        var i = (py * W + px);
-
-        var baseRay = genRay(px, py, W, H);
-        var oRay = {
-          orig: wToO(baseRay.orig, rx, ry),
-          dir:  wToO(baseRay.dir,  rx, ry)
-        };
-
-        var hit = intersect(oRay, geo);
+        var ray = genRay(px, py, W, H, basis);
+        var hit = intersectAll(ray, objects, lights, -1, -1);
         var color;
 
-        if (hit) {
-          var wP = oToW(hit.P, rx, ry);
-          var wN = Physics.v3.norm(oToW(hit.N, rx, ry));
-          color = Physics.phong(wP, wN, baseRay.dir, lightPos, lightRgb, albedoRgb, metallic, roughness);
+        if (hit && hit.kind === 'object') {
+          var obj = objects[hit.index];
+          var N = Physics.v3.norm(hit.N);
+
+          // One-bounce environment reflection: what does this surface "see"?
+          // (other objects AND the glowing light bulbs themselves)
+          var reflDir = Physics.v3.norm(Physics.v3.reflect(ray.dir, N));
+          var reflRay = {
+            orig: Physics.v3.add(hit.P, Physics.v3.mul(N, 1e-3)),
+            dir: reflDir
+          };
+          var reflHit = intersectAll(reflRay, objects, lights, hit.index, -1);
+          var reflEnv;
+          if (!reflHit) reflEnv = background(reflDir);
+          else if (reflHit.kind === 'object') reflEnv = objects[reflHit.index].color;
+          else reflEnv = Physics.col.mul(lights[reflHit.index].rgb, 1.4);
+
+          color = Physics.shadeMulti(
+            hit.P, N, ray.dir, lights,
+            obj.color, obj.metallic, obj.roughness, reflEnv
+          );
+        } else if (hit && hit.kind === 'light') {
+          // The light bulb itself: a glowing emissive sphere, not a shaded surface.
+          var light = lights[hit.index];
+          var glow = 0.55 + Math.min(1.2, (light.intensity || 1) * 0.08);
+          color = Physics.col.mul(light.rgb, glow);
         } else {
-          color = background(py, H);
+          color = background(ray.dir);
         }
 
-        var base = i * 4;
+        var base = (py * W + px) * 4;
         data[base]     = Math.max(0, Math.min(255, color.r | 0));
         data[base + 1] = Math.max(0, Math.min(255, color.g | 0));
         data[base + 2] = Math.max(0, Math.min(255, color.b | 0));
@@ -343,7 +332,11 @@ var Renderer3D = (function () {
     ctx.putImageData(img, 0, 0);
   }
 
-  // ── Public API ───────────────────────────────────────────────────────────────
-  return { render: render };
+  return {
+    render: render,
+    cameraBasis: cameraBasis,
+    genRay: genRay,
+    pickObject: pickObject
+  };
 
 })();
