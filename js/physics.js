@@ -59,25 +59,51 @@ const Physics = (() => {
    * @param {string} lightHex  - màu nguồn sáng
    * @param {string} objectHex - màu thuần của vật thể (pigment)
    * @param {number} intensity - cường độ ánh sáng [0, 1] (giảm theo khoảng cách)
-   * @returns {{ lit, midLight, objectNatural, shadow, reflected, objRgb }}
+   * @param {number} metallic  - độ kim loại [0, 1]:
+   *   0 = hoàn toàn matte (khuếch tán), 1 = hoàn toàn metallic (phản chiếu)
+   *
+   * Vật liệu matte:
+   *   - Ánh sáng tán xạ đều theo mọi hướng (Lambertian diffuse)
+   *   - Highlight rộng, mềm
+   *   - Bóng sáng (specular) gần như trắng
+   *
+   * Vật liệu metallic:
+   *   - Phản xạ gương: highlight cực nhỏ và sắc nét
+   *   - Màu highlight = màu nguồn sáng (không bị trắng hóa)
+   *   - Vùng tối tối hơn (ít ambient hơn)
+   *   - Toàn bề mặt nhuốm màu ánh sáng nhiều hơn
+   *
+   * @returns {{ lit, midLight, objectNatural, shadow, reflected, specular, objRgb }}
    */
-  const computeLighting = (lightHex, objectHex, intensity = 1.0) => {
-    const reflected      = reflect(lightHex, objectHex);
-    const objRgb         = hexToRgb(objectHex);
+  const computeLighting = (lightHex, objectHex, intensity = 1.0, metallic = 0.0) => {
+    const reflected  = reflect(lightHex, objectHex);
+    const objRgb     = hexToRgb(objectHex);
+    const lightRgb   = hexToRgb(lightHex);
 
-    // Vùng được chiếu sáng trực tiếp: màu phản xạ × cường độ
-    const lit            = scale(reflected, intensity);
+    // Màu lit: vật liệu metallic sẽ nhuốm thêm màu ánh sáng
+    const metallicBlend = metallic * 0.55;
+    const litBase  = lerp(reflected, scale(lightRgb, intensity), metallicBlend);
+    const lit      = scale(litBase, intensity);
 
-    // Vùng nửa sáng: blend giữa màu tự nhiên và màu phản xạ
-    const midLight       = lerp(objRgb, lit, 0.55);
+    // Midtone: blend từ màu tự nhiên sang màu lit
+    const midLight = lerp(objRgb, lit, 0.5 + metallic * 0.1);
 
-    // Màu tự nhiên của vật ở mức ánh sáng bình thường (ambient ~12%)
-    const objectNatural  = scale(objRgb, 0.12 + 0.08 * intensity);
+    // Ambient: metallic có ambient thấp hơn rất nhiều
+    const ambientBase = 0.12 - metallic * 0.09;
+    const objectNatural = scale(objRgb, ambientBase + 0.07 * intensity);
 
-    // Vùng bóng tối sâu: chỉ còn ambient rất thấp, nhưng vẫn giữ hue của vật
-    const shadow         = scale(objRgb, 0.04);
+    // Shadow: metallic tối hơn (ít photon tán xạ hơn)
+    const shadow = scale(objRgb, 0.04 - metallic * 0.025);
 
-    return { lit, midLight, objectNatural, shadow, reflected, objRgb };
+    // ── Specular highlight (điểm sáng chói) ──
+    // Matte: specular trắng, nhỏ
+    // Metallic: specular = màu ánh sáng, rất sắc nét
+    const specularColor = lerp({ r: 255, g: 255, b: 255 }, lightRgb, metallic);
+    // Cường độ specular tăng theo metallic
+    const specularStrength = Math.min(1.0, intensity * (0.4 + metallic * 0.8));
+    const specular = scale(specularColor, specularStrength);
+
+    return { lit, midLight, objectNatural, shadow, reflected, specular, objRgb };
   };
 
   /**

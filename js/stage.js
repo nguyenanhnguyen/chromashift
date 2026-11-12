@@ -170,24 +170,44 @@ const Stage = (() => {
   /**
    * Hình cầu: radial-gradient, tâm sáng lệch về phía nguồn sáng.
    *
-   * Tâm highlight được tính:
-   *   hx = 50% + nx × 36%   (nx > 0 → đèn bên phải → highlight bên phải)
-   *   hy = 50% + ny × 36%   (ny < 0 → đèn phía trên → highlight phía trên)
+   * Metallic ảnh hưởng tới:
+   *   - Kích thước specular highlight (nhỏ dần khi metallic tăng)
+   *   - Màu highlight (trắng → màu ánh sáng)
+   *   - Độ sắc nét của chuyển màu
    */
-  function renderSphere(el, lighting) {
+  function renderSphere(el, lighting, metallic = 0) {
     const { nx, ny } = getLightDir();
-    const { lit, midLight, objectNatural, shadow } = lighting;
+    const { lit, midLight, objectNatural, shadow, specular } = lighting;
 
     const hx = 50 + nx * 36;
     const hy = 50 + ny * 36;
 
-    el.style.background = `
-      radial-gradient(circle at ${hx.toFixed(1)}% ${hy.toFixed(1)}%,
-        ${Physics.toCss(lit)}           0%,
-        ${Physics.toCss(midLight)}      38%,
-        ${Physics.toCss(objectNatural)} 68%,
-        ${Physics.toCss(shadow)}        100%
-      )`;
+    // Specular: kích thước từ 48% (matte) → 7% (metallic)
+    const specStop = (48 - metallic * 41).toFixed(0);
+    const midStop  = (parseFloat(specStop) + 26 - metallic * 12).toFixed(0);
+    const natStop  = (parseFloat(midStop)  + 16 - metallic * 8 ).toFixed(0);
+
+    if (metallic < 0.04) {
+      // Fully matte: gradient mềm, không có điểm specular riêng
+      el.style.background = `
+        radial-gradient(circle at ${hx.toFixed(1)}% ${hy.toFixed(1)}%,
+          ${Physics.toCss(lit)}           0%,
+          ${Physics.toCss(midLight)}      ${specStop}%,
+          ${Physics.toCss(objectNatural)} ${midStop}%,
+          ${Physics.toCss(shadow)}        100%
+        )`;
+    } else {
+      // Glossy → metallic: có điểm specular sắc nét
+      el.style.background = `
+        radial-gradient(circle at ${hx.toFixed(1)}% ${hy.toFixed(1)}%,
+          ${Physics.toCss(specular)}      0%,
+          ${Physics.toCss(lit)}           ${specStop}%,
+          ${Physics.toCss(midLight)}      ${midStop}%,
+          ${Physics.toCss(objectNatural)} ${natStop}%,
+          ${Physics.toCss(shadow)}        100%
+        )`;
+    }
+
     el.style.width        = '130px';
     el.style.height       = '130px';
     el.style.borderRadius = '50%';
@@ -195,22 +215,37 @@ const Stage = (() => {
   }
 
   /**
-   * Hình hộp: linear-gradient theo hướng ánh sáng.
+   * Hình hộp: linear-gradient + specular edge khi metallic cao.
    *
-   * cssAngle: góc từ shadow-side → lit-side.
-   * Thêm điểm dừng ở giữa để giữ lại màu tự nhiên của vật ở midtone.
+   * Matte: chuyển màu mượt từ shadow → lit.
+   * Metallic: thêm dải sáng sắc nét ở cạnh chiếu sáng.
    */
-  function renderCube(el, lighting) {
+  function renderCube(el, lighting, metallic = 0) {
     const { cssAngle } = getLightDir();
-    const { lit, midLight, objectNatural, shadow } = lighting;
+    const { lit, midLight, objectNatural, shadow, specular } = lighting;
 
-    el.style.background = `
-      linear-gradient(${cssAngle.toFixed(1)}deg,
-        ${Physics.toCss(shadow)}        0%,
-        ${Physics.toCss(objectNatural)} 25%,
-        ${Physics.toCss(midLight)}      55%,
-        ${Physics.toCss(lit)}           100%
-      )`;
+    if (metallic < 0.04) {
+      el.style.background = `
+        linear-gradient(${cssAngle.toFixed(1)}deg,
+          ${Physics.toCss(shadow)}        0%,
+          ${Physics.toCss(objectNatural)} 25%,
+          ${Physics.toCss(midLight)}      55%,
+          ${Physics.toCss(lit)}           100%
+        )`;
+    } else {
+      // Specular: dải sáng ở cạnh lit, hẹp theo metallic
+      const specWidth = (8 - metallic * 6).toFixed(0); // 8% matte → 2% metallic
+      const litStop   = (100 - 20 - metallic * 10).toFixed(0);
+      el.style.background = `
+        linear-gradient(${cssAngle.toFixed(1)}deg,
+          ${Physics.toCss(shadow)}        0%,
+          ${Physics.toCss(objectNatural)} ${(25 - metallic * 10).toFixed(0)}%,
+          ${Physics.toCss(midLight)}      ${litStop}%,
+          ${Physics.toCss(lit)}           ${(100 - parseFloat(specWidth) - 2).toFixed(0)}%,
+          ${Physics.toCss(specular)}      100%
+        )`;
+    }
+
     el.style.width        = '120px';
     el.style.height       = '120px';
     el.style.borderRadius = '14px';
@@ -218,19 +253,29 @@ const Stage = (() => {
   }
 
   /**
-   * Lăng kính: tam giác (clip-path), linear-gradient.
-   * Phần đỉnh vs. đáy tam giác được phân biệt bởi hướng sáng.
+   * Lăng kính: tam giác (clip-path), linear-gradient + specular edge.
    */
-  function renderPrism(el, lighting) {
+  function renderPrism(el, lighting, metallic = 0) {
     const { cssAngle } = getLightDir();
-    const { lit, midLight, shadow } = lighting;
+    const { lit, midLight, shadow, specular } = lighting;
 
-    el.style.background = `
-      linear-gradient(${cssAngle.toFixed(1)}deg,
-        ${Physics.toCss(shadow)}   0%,
-        ${Physics.toCss(midLight)} 50%,
-        ${Physics.toCss(lit)}      100%
-      )`;
+    if (metallic < 0.04) {
+      el.style.background = `
+        linear-gradient(${cssAngle.toFixed(1)}deg,
+          ${Physics.toCss(shadow)}   0%,
+          ${Physics.toCss(midLight)} 50%,
+          ${Physics.toCss(lit)}      100%
+        )`;
+    } else {
+      el.style.background = `
+        linear-gradient(${cssAngle.toFixed(1)}deg,
+          ${Physics.toCss(shadow)}   0%,
+          ${Physics.toCss(midLight)} 45%,
+          ${Physics.toCss(lit)}      ${(90 - metallic * 15).toFixed(0)}%,
+          ${Physics.toCss(specular)} 100%
+        )`;
+    }
+
     el.style.clipPath     = 'polygon(50% 0%, 100% 100%, 0% 100%)';
     el.style.width        = '130px';
     el.style.height       = '120px';

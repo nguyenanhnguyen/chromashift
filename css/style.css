@@ -347,6 +347,120 @@ input[type="color"]::-webkit-color-swatch { border: 2px solid #475569; border-ra
 .shape-btn:hover:not(.active) { background: #1e2a3a; color: var(--text); }
 
 /* ════════════════════════
+   METALLIC SLIDER
+════════════════════════ */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.slider-end-label {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* Range input — override browser default */
+.metallic-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  /* Gradient: earthy brown (matte) → metallic silver */
+  background: linear-gradient(90deg,
+    #7c5533 0%,
+    #c8822a 30%,
+    #d4d4d4 65%,
+    #e8e8f0 85%,
+    #c0bfff 100%
+  );
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.metallic-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff, #94a3b8);
+  cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.4);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.metallic-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.6), 0 0 8px rgba(200,210,255,0.4);
+}
+
+.metallic-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff, #94a3b8);
+  cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.4);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
+/* Sub-labels: Matte / Glossy / Metal */
+.slider-sublabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+
+/* Diffuse vs Specular split bar */
+.mat-split-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.mat-split-label {
+  font-size: 0.65rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mat-split-track {
+  flex: 1;
+  display: flex;
+  height: 7px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #262b36;
+}
+
+.mat-split-fill {
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+.mat-split-fill.diffuse  {
+  /* Màu nâu đất → đại diện khuếch tán */
+  background: linear-gradient(90deg, #c0813b, #d4a76a);
+  border-radius: 4px 0 0 4px;
+}
+
+.mat-split-fill.specular {
+  /* Màu bạc → đại diện phản chiếu gương */
+  background: linear-gradient(90deg, #94a3b8, #e2e8f0);
+  border-radius: 0 4px 4px 0;
+}
+
+/* ════════════════════════
    RESULT BOX
 ════════════════════════ */
 .result-box {

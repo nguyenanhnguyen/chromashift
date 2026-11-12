@@ -10,6 +10,7 @@
 let lightHex    = '#ffffff';
 let objectHex   = '#e63333';
 let currentShape = 'sphere';
+let metallic    = 0.0;   // [0, 1] — 0 = matte, 1 = metallic
 
 const NUM_PHOTONS = 9;
 
@@ -34,6 +35,15 @@ function setShape(shape) {
   ['sphere', 'cube', 'prism'].forEach(s => {
     document.getElementById('btn-' + s).classList.toggle('active', s === shape);
   });
+  update();
+}
+
+function setMetallic(val) {
+  metallic = Math.max(0, Math.min(1, val / 100));
+  document.getElementById('metallicValue').textContent = Math.round(val) + '%';
+  // Cập nhật thanh phân chia Diffuse/Specular
+  document.getElementById('diffuseBar').style.width  = (100 - val) + '%';
+  document.getElementById('specularBar').style.width = val + '%';
   update();
 }
 
@@ -62,16 +72,16 @@ function createPhotons() {
 
 function update() {
   const intensity = Stage.getIntensity();
-  const lighting  = Physics.computeLighting(lightHex, objectHex, intensity);
+  const lighting  = Physics.computeLighting(lightHex, objectHex, intensity, metallic);
   const ref       = lighting.reflected;
   const refHex    = Physics.rgbToHex(ref);
   const refCss    = Physics.toCss(ref);
 
   /* ── Render object surface ── */
   const objEl = document.getElementById('simObject');
-  if      (currentShape === 'sphere') Stage.renderSphere(objEl, lighting);
-  else if (currentShape === 'cube')   Stage.renderCube(objEl, lighting);
-  else                                Stage.renderPrism(objEl, lighting);
+  if      (currentShape === 'sphere') Stage.renderSphere(objEl, lighting, metallic);
+  else if (currentShape === 'cube')   Stage.renderCube(objEl, lighting, metallic);
+  else                                Stage.renderPrism(objEl, lighting, metallic);
 
   /* ── SVG visuals ── */
   Stage.updateCone(lightHex);
@@ -143,6 +153,10 @@ document.addEventListener('DOMContentLoaded', () => {
     objectHex = e.target.value;
     update();
   });
+
+  /* Metallic slider */
+  const slider = document.getElementById('metallicSlider');
+  slider.addEventListener('input', () => setMetallic(parseFloat(slider.value)));
 
   /* Render lần đầu */
   update();

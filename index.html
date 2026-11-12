@@ -180,7 +180,38 @@
         </div>
       </div>
 
-      <!-- 4. Kết Quả -->
+      <!-- 4. Metallic / Độ bóng -->
+      <div class="control-section">
+        <div class="section-header">
+          <span class="section-title">4. Độ Bóng (Metallic)</span>
+          <span id="metallicValue" class="hex-code">0%</span>
+        </div>
+
+        <!-- Thanh trượt chính -->
+        <div class="slider-row">
+          <span class="slider-end-label">🧱</span>
+          <input type="range" id="metallicSlider" class="metallic-slider"
+                 min="0" max="100" value="0" step="1">
+          <span class="slider-end-label">🪞</span>
+        </div>
+        <div class="slider-sublabels">
+          <span>Matte</span>
+          <span>Glossy</span>
+          <span>Metal</span>
+        </div>
+
+        <!-- Thanh phân chia Diffuse vs Specular -->
+        <div class="mat-split-row">
+          <span class="mat-split-label">Diffuse</span>
+          <div class="mat-split-track">
+            <div class="mat-split-fill diffuse" id="diffuseBar"  style="width:100%"></div>
+            <div class="mat-split-fill specular" id="specularBar" style="width:0%"></div>
+          </div>
+          <span class="mat-split-label">Specular</span>
+        </div>
+      </div>
+
+      <!-- 5. Kết Quả -->
       <div class="result-box">
         <div class="result-title">👁️ Màu Mắt Người Nhìn Thấy</div>
         <div class="result-preview">
