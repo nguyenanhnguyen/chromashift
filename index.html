@@ -3,525 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ChromaShift - Light &amp; Object Color Lab</title>
-  <style>
-    :root {
-      --bg-color: #0f1115;
-      --panel-bg: #181b21;
-      --border-color: #2a2f3a;
-      --text-main: #f1f5f9;
-      --text-muted: #94a3b8;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background-color: var(--bg-color);
-      color: var(--text-main);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      padding: 20px;
-    }
-
-    .app-container {
-      width: 100%;
-      max-width: 900px;
-      background: var(--panel-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-    }
-
-    .header {
-      padding: 18px 24px;
-      border-bottom: 1px solid var(--border-color);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .header h1 {
-      font-size: 1.2rem;
-      font-weight: 600;
-      letter-spacing: 0.5px;
-    }
-
-    .badge {
-      background: #2563eb;
-      color: white;
-      font-size: 0.75rem;
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-weight: 600;
-    }
-
-    .main-grid {
-      display: grid;
-      grid-template-columns: 1.3fr 1fr;
-    }
-
-    @media (max-width: 768px) {
-      .main-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    /* ───── Sân khấu mô phỏng ───── */
-    .stage-container {
-      position: relative;
-      background: radial-gradient(circle at 50% 10%, #1c2029 0%, #090a0d 100%);
-      min-height: 440px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: space-between;
-      padding: 30px 20px 50px;
-      border-right: 1px solid var(--border-color);
-      overflow: hidden;
-    }
-
-    /* Đèn chiếu */
-    .lamp-housing {
-      width: 90px;
-      height: 28px;
-      background: #2d333f;
-      border-radius: 8px 8px 0 0;
-      position: relative;
-      z-index: 10;
-      display: flex;
-      justify-content: center;
-      border: 1px solid #475569;
-    }
-
-    .lamp-bulb {
-      width: 70px;
-      height: 14px;
-      border-radius: 0 0 35px 35px;
-      position: absolute;
-      bottom: -12px;
-      transition: all 0.2s ease;
-    }
-
-    /* Chùm sáng từ đèn */
-    .light-cone {
-      position: absolute;
-      top: 52px;
-      width: 340px;
-      height: 310px;
-      clip-path: polygon(40% 0%, 60% 0%, 100% 100%, 0% 100%);
-      pointer-events: none;
-      opacity: 0.35;
-      filter: blur(8px);
-      transition: background 0.2s ease;
-      z-index: 2;
-    }
-
-    /* Chùm tia phản xạ tới mắt người nhìn */
-    .bounce-rays {
-      position: absolute;
-      bottom: 85px;
-      right: 45px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      z-index: 5;
-      opacity: 0.85;
-    }
-
-    .eye-icon {
-      font-size: 1.5rem;
-      background: rgba(255,255,255,0.08);
-      padding: 8px;
-      border-radius: 50%;
-      border: 1px solid rgba(255,255,255,0.15);
-    }
-
-    .ray-line {
-      width: 80px;
-      height: 4px;
-      border-radius: 2px;
-      transform: rotate(-25deg);
-      margin-bottom: 12px;
-      margin-right: 45px;
-      transition: background-color 0.2s, box-shadow 0.2s;
-    }
-
-    /* Vật thể */
-    .object-wrapper {
-      position: relative;
-      z-index: 5;
-      margin-top: auto;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .shape-sphere {
-      width: 130px;
-      height: 130px;
-      border-radius: 50%;
-      position: relative;
-      transition: all 0.3s ease;
-    }
-
-    .shape-sphere::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      background: radial-gradient(circle at 35% 25%, rgba(255,255,255,0.35) 0%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.75) 100%);
-    }
-
-    .shape-cube {
-      width: 120px;
-      height: 120px;
-      border-radius: 14px;
-      position: relative;
-      transition: all 0.3s ease;
-    }
-
-    .shape-cube::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 14px;
-      background: linear-gradient(145deg, rgba(255,255,255,0.3) 0%, rgba(0,0,0,0.65) 100%);
-    }
-
-    .shape-prism {
-      width: 0;
-      height: 0;
-      border-left: 65px solid transparent;
-      border-right: 65px solid transparent;
-      border-bottom: 120px solid currentColor;
-      position: relative;
-      transition: all 0.3s ease;
-      /* override background → use border-bottom color */
-    }
-
-    .shape-prism::after {
-      content: '';
-      position: absolute;
-      bottom: -120px;
-      left: -65px;
-      width: 130px;
-      height: 120px;
-      clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
-      background: linear-gradient(145deg, rgba(255,255,255,0.25) 0%, rgba(0,0,0,0.5) 100%);
-    }
-
-    .floor-shadow {
-      position: absolute;
-      bottom: 35px;
-      width: 160px;
-      height: 22px;
-      background: rgba(0, 0, 0, 0.8);
-      border-radius: 50%;
-      filter: blur(6px);
-      z-index: 1;
-    }
-
-    /* Nhãn góc ánh sáng */
-    .physics-label {
-      position: absolute;
-      font-size: 0.65rem;
-      color: rgba(255,255,255,0.4);
-      letter-spacing: 0.5px;
-      pointer-events: none;
-      z-index: 10;
-    }
-
-    .label-incident {
-      top: 56px;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-
-    .label-reflected {
-      bottom: 92px;
-      right: 10px;
-      text-align: right;
-    }
-
-    /* Particle dots trong chùm sáng */
-    @keyframes floatDown {
-      0%   { transform: translateY(0)   translateX(0)   scale(1); opacity: 0.7; }
-      100% { transform: translateY(220px) translateX(var(--dx)) scale(0.5); opacity: 0; }
-    }
-
-    .photon {
-      position: absolute;
-      top: 55px;
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      animation: floatDown 1.4s ease-in infinite;
-      pointer-events: none;
-      z-index: 3;
-    }
-
-    /* ───── Bảng điều khiển ───── */
-    .controls-panel {
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .control-section {
-      background: #12141a;
-      padding: 16px;
-      border-radius: 12px;
-      border: 1px solid var(--border-color);
-    }
-
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    .section-title {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: var(--text-main);
-    }
-
-    .hex-code {
-      font-family: monospace;
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      background: #1e222b;
-      padding: 2px 8px;
-      border-radius: 4px;
-    }
-
-    .color-row {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    input[type="color"] {
-      -webkit-appearance: none;
-      border: none;
-      width: 44px;
-      height: 36px;
-      border-radius: 8px;
-      cursor: pointer;
-      background: none;
-    }
-
-    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
-    input[type="color"]::-webkit-color-swatch {
-      border: 2px solid #475569;
-      border-radius: 8px;
-    }
-
-    .presets {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
-    .preset-btn {
-      width: 26px;
-      height: 26px;
-      border-radius: 6px;
-      border: 2px solid rgba(255,255,255,0.2);
-      cursor: pointer;
-      transition: transform 0.1s, box-shadow 0.15s;
-    }
-
-    .preset-btn:hover {
-      transform: scale(1.2);
-      box-shadow: 0 0 8px rgba(255,255,255,0.3);
-    }
-
-    .shape-selector {
-      display: flex;
-      gap: 8px;
-    }
-
-    .shape-btn {
-      flex: 1;
-      padding: 8px 4px;
-      background: #1e222b;
-      border: 1px solid var(--border-color);
-      color: var(--text-muted);
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      font-weight: 500;
-      transition: background 0.15s, color 0.15s;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .shape-btn .shape-icon { font-size: 1.1rem; }
-
-    .shape-btn.active {
-      background: #2563eb;
-      color: white;
-      border-color: #3b82f6;
-    }
-
-    .shape-btn:hover:not(.active) {
-      background: #1e2a3a;
-      color: var(--text-main);
-    }
-
-    /* ───── Kết quả phân tích ───── */
-    .result-box {
-      background: #12141a;
-      padding: 16px;
-      border-radius: 12px;
-      border: 1px solid var(--border-color);
-    }
-
-    .result-title {
-      font-size: 0.9rem;
-      font-weight: 600;
-      margin-bottom: 10px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .result-preview {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      margin-top: 10px;
-    }
-
-    .swatch-box {
-      width: 52px;
-      height: 52px;
-      border-radius: 10px;
-      border: 2px solid rgba(255,255,255,0.15);
-      flex-shrink: 0;
-      transition: background 0.2s;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .swatch-box::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.2), transparent 70%);
-    }
-
-    .rgb-bars {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 0.8rem;
-      font-family: monospace;
-    }
-
-    .bar-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .bar-label {
-      width: 10px;
-      font-weight: 700;
-    }
-
-    .bar-track {
-      flex: 1;
-      height: 6px;
-      background: #262b36;
-      border-radius: 3px;
-      overflow: hidden;
-    }
-
-    .bar-fill {
-      height: 100%;
-      border-radius: 3px;
-      transition: width 0.25s ease;
-    }
-
-    .bar-value {
-      width: 28px;
-      text-align: right;
-      color: var(--text-muted);
-    }
-
-    .result-hex {
-      margin-top: 10px;
-      font-family: monospace;
-      font-size: 0.95rem;
-      text-align: center;
-      letter-spacing: 2px;
-      color: var(--text-main);
-      padding: 6px;
-      background: #1a1d27;
-      border-radius: 8px;
-      border: 1px solid var(--border-color);
-    }
-
-    /* Công thức vật lý nhỏ */
-    .formula-hint {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      text-align: center;
-      margin-top: 10px;
-      line-height: 1.5;
-      border-top: 1px solid var(--border-color);
-      padding-top: 10px;
-    }
-
-    .formula-hint code {
-      background: #1e222b;
-      padding: 1px 5px;
-      border-radius: 3px;
-      color: #7dd3fc;
-    }
-
-    /* ───── Footer ───── */
-    .footer-bar {
-      border-top: 1px solid var(--border-color);
-      padding: 12px 24px;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .footer-bar .dot {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #22c55e;
-      margin-right: 6px;
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.4; }
-    }
-  </style>
+  <title>ChromaShift — Light &amp; Color Reflection Lab</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
@@ -536,41 +19,105 @@
   <!-- ═══ MAIN GRID ═══ -->
   <div class="main-grid">
 
-    <!-- ── Sân khấu mô phỏng ── -->
+    <!-- ── STAGE ── -->
     <div class="stage-container" id="stage">
-      <!-- Đèn chiếu -->
-      <div class="lamp-housing">
-        <div id="bulb" class="lamp-bulb"></div>
+
+      <!--
+        SVG overlay — z-index 3
+        Vẽ: hình nón ánh sáng (polygon) + tia phản xạ (line)
+        Tọa độ được cập nhật theo vị trí lamp & object trong JS.
+      -->
+      <svg class="stage-svg" id="stageSvg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- Blur cho hình nón ánh sáng -->
+          <filter id="coneBlur" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="7"/>
+          </filter>
+          <!-- Glow cho tia phản xạ -->
+          <filter id="rayGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+
+        <!-- Hình nón ánh sáng từ đèn → vật thể -->
+        <polygon id="conePolygon"
+                 opacity="0.26"
+                 filter="url(#coneBlur)"
+                 points="250,46 182,330 318,330"/>
+
+        <!-- Tia phản xạ từ vật thể → mắt người quan sát -->
+        <line id="rayLine"
+              stroke-width="3"
+              stroke-linecap="round"
+              opacity="0.78"
+              filter="url(#rayGlow)"
+              x1="250" y1="332" x2="430" y2="362"/>
+      </svg>
+
+      <!--
+        LAMP — kéo-thả tự do trong stage
+        Vị trí được set bằng left/top (%) qua JS.
+        Photon stream bên trong được xoay hướng về vật thể.
+      -->
+      <div class="lamp-drag" id="lamp">
+        <div class="lamp-housing">
+          <div class="lamp-bulb" id="bulb"></div>
+        </div>
+        <span class="drag-hint">☀️ kéo đèn</span>
+
+        <!--
+          Photon stream: transform-origin (0,0) = điểm phát sáng (đầu bóng đèn).
+          Được xoay bởi JS để hướng photon về phía vật thể.
+        -->
+        <div class="photon-stream" id="photonStream">
+          <!-- Photons được tạo động bởi main.js -->
+        </div>
       </div>
 
-      <!-- Nhãn tia tới -->
-      <div class="physics-label label-incident" id="labelIncident">↓ Tia tới</div>
+      <!--
+        OBJECT — kéo-thả tự do trong stage
+        Gradient màu được cập nhật theo hướng ánh sáng.
+      -->
+      <div class="obj-drag" id="objDrag">
+        <!--
+          Badge hiển thị màu phản xạ trực tiếp trên vật thể.
+          Màu nền = màu phản xạ; text tự động đổi trắng/đen cho dễ đọc.
+        -->
+        <div class="obj-color-badge" id="objColorBadge">#000</div>
 
-      <!-- Chùm sáng hình nón -->
-      <div id="lightCone" class="light-cone"></div>
+        <!--
+          simObject: background gradient được tính toán bởi stage.js
+          dựa trên:
+            - hướng vector ánh sáng (nx, ny)
+            - lighting zones: lit, midLight, objectNatural, shadow
+          Phía gần đèn → màu lit (phản xạ)
+          Phía xa đèn  → màu shadow (tối, giữ hue gốc)
+        -->
+        <div class="sim-object" id="simObject"></div>
 
-      <!-- Photon particles -->
-      <div id="photonContainer"></div>
-
-      <!-- Vật thể -->
-      <div class="object-wrapper">
-        <div id="simObject" class="shape-sphere"></div>
+        <span class="drag-hint">↔↕ kéo vật</span>
       </div>
 
-      <!-- Chùm tia phản xạ → mắt -->
-      <div class="bounce-rays">
-        <div id="reflectedRay" class="ray-line"></div>
+      <!--
+        OBSERVER — cố định góc dưới-phải
+        Nhận tia phản xạ từ vật thể.
+        Label hiển thị hex màu mà mắt người thực sự thấy.
+      -->
+      <div class="observer" id="observer">
         <div class="eye-icon" title="Màu mắt người nhìn thấy">👁️</div>
+        <div class="obs-label" id="obsLabel">#000</div>
       </div>
 
-      <!-- Nhãn tia phản xạ -->
-      <div class="physics-label label-reflected" id="labelReflected">Tia phản xạ ↗</div>
-
-      <!-- Bóng đổ sàn -->
+      <!-- Bóng đổ dưới vật — vị trí và màu cập nhật theo vật thể & ánh sáng -->
       <div class="floor-shadow" id="floorShadow"></div>
-    </div>
 
-    <!-- ── Bảng điều khiển ── -->
+    </div><!-- /stage -->
+
+    <!-- ── CONTROLS ── -->
     <div class="controls-panel">
 
       <!-- 1. Màu Ánh Sáng -->
@@ -582,14 +129,14 @@
         <div class="color-row">
           <input type="color" id="lightColor" value="#ffffff">
           <div class="presets">
-            <button class="preset-btn" style="background:#ffffff" title="Trắng"    onclick="setLight('#ffffff')"></button>
-            <button class="preset-btn" style="background:#ff3300" title="Đỏ"       onclick="setLight('#ff3300')"></button>
-            <button class="preset-btn" style="background:#00cc44" title="Xanh lá"  onclick="setLight('#00cc44')"></button>
+            <button class="preset-btn" style="background:#ffffff" title="Trắng"       onclick="setLight('#ffffff')"></button>
+            <button class="preset-btn" style="background:#ff3300" title="Đỏ"          onclick="setLight('#ff3300')"></button>
+            <button class="preset-btn" style="background:#00cc44" title="Xanh lá"    onclick="setLight('#00cc44')"></button>
             <button class="preset-btn" style="background:#1a66ff" title="Xanh dương" onclick="setLight('#1a66ff')"></button>
-            <button class="preset-btn" style="background:#ffdd00" title="Vàng"     onclick="setLight('#ffdd00')"></button>
-            <button class="preset-btn" style="background:#00eeff" title="Lục lam"  onclick="setLight('#00eeff')"></button>
-            <button class="preset-btn" style="background:#ff00cc" title="Magenta"  onclick="setLight('#ff00cc')"></button>
-            <button class="preset-btn" style="background:#ff6600" title="Cam"      onclick="setLight('#ff6600')"></button>
+            <button class="preset-btn" style="background:#ffdd00" title="Vàng"        onclick="setLight('#ffdd00')"></button>
+            <button class="preset-btn" style="background:#00eeff" title="Lục lam"    onclick="setLight('#00eeff')"></button>
+            <button class="preset-btn" style="background:#ff00cc" title="Magenta"    onclick="setLight('#ff00cc')"></button>
+            <button class="preset-btn" style="background:#ff6600" title="Cam"         onclick="setLight('#ff6600')"></button>
           </div>
         </div>
       </div>
@@ -603,31 +150,31 @@
         <div class="color-row">
           <input type="color" id="objectColor" value="#e63333">
           <div class="presets">
-            <button class="preset-btn" style="background:#ffffff" title="Trắng"       onclick="setObject('#ffffff')"></button>
-            <button class="preset-btn" style="background:#000000; border-color:#666" title="Đen" onclick="setObject('#000000')"></button>
-            <button class="preset-btn" style="background:#e63333" title="Đỏ"          onclick="setObject('#e63333')"></button>
-            <button class="preset-btn" style="background:#33cc55" title="Xanh lá"     onclick="setObject('#33cc55')"></button>
-            <button class="preset-btn" style="background:#2255dd" title="Xanh dương"  onclick="setObject('#2255dd')"></button>
-            <button class="preset-btn" style="background:#f5a623" title="Cam"         onclick="setObject('#f5a623')"></button>
-            <button class="preset-btn" style="background:#9b59b6" title="Tím"         onclick="setObject('#9b59b6')"></button>
-            <button class="preset-btn" style="background:#888888" title="Xám"         onclick="setObject('#888888')"></button>
+            <button class="preset-btn" style="background:#ffffff"                     title="Trắng"      onclick="setObject('#ffffff')"></button>
+            <button class="preset-btn" style="background:#111;border-color:#555"      title="Đen"        onclick="setObject('#111111')"></button>
+            <button class="preset-btn" style="background:#e63333"                     title="Đỏ"         onclick="setObject('#e63333')"></button>
+            <button class="preset-btn" style="background:#33cc55"                     title="Xanh lá"   onclick="setObject('#33cc55')"></button>
+            <button class="preset-btn" style="background:#2255dd"                     title="Xanh dương" onclick="setObject('#2255dd')"></button>
+            <button class="preset-btn" style="background:#f5a623"                     title="Cam"        onclick="setObject('#f5a623')"></button>
+            <button class="preset-btn" style="background:#9b59b6"                     title="Tím"        onclick="setObject('#9b59b6')"></button>
+            <button class="preset-btn" style="background:#888888"                     title="Xám"        onclick="setObject('#888888')"></button>
           </div>
         </div>
       </div>
 
-      <!-- 3. Chọn Hình Dạng -->
+      <!-- 3. Hình Dạng -->
       <div class="control-section">
         <div class="section-header">
           <span class="section-title">3. Hình Dạng Vật Thể</span>
         </div>
         <div class="shape-selector">
-          <button class="shape-btn active" id="btnSphere" onclick="setShape('sphere')">
+          <button class="shape-btn active" id="btn-sphere" onclick="setShape('sphere')">
             <span class="shape-icon">⚽</span>Hình cầu
           </button>
-          <button class="shape-btn" id="btnCube" onclick="setShape('cube')">
+          <button class="shape-btn" id="btn-cube" onclick="setShape('cube')">
             <span class="shape-icon">🧊</span>Hình hộp
           </button>
-          <button class="shape-btn" id="btnPrism" onclick="setShape('prism')">
+          <button class="shape-btn" id="btn-prism" onclick="setShape('prism')">
             <span class="shape-icon">🔺</span>Lăng kính
           </button>
         </div>
@@ -635,25 +182,23 @@
 
       <!-- 4. Kết Quả -->
       <div class="result-box">
-        <div class="result-title">
-          👁️ Màu Mắt Người Nhìn Thấy
-        </div>
+        <div class="result-title">👁️ Màu Mắt Người Nhìn Thấy</div>
         <div class="result-preview">
           <div class="swatch-box" id="resultSwatch"></div>
           <div class="rgb-bars">
             <div class="bar-row">
               <span class="bar-label" style="color:#f87171">R</span>
-              <div class="bar-track"><div class="bar-fill" id="barR" style="background:#f87171; width:0%"></div></div>
+              <div class="bar-track"><div class="bar-fill" id="barR" style="background:#f87171;width:0%"></div></div>
               <span class="bar-value" id="valR">0</span>
             </div>
             <div class="bar-row">
               <span class="bar-label" style="color:#4ade80">G</span>
-              <div class="bar-track"><div class="bar-fill" id="barG" style="background:#4ade80; width:0%"></div></div>
+              <div class="bar-track"><div class="bar-fill" id="barG" style="background:#4ade80;width:0%"></div></div>
               <span class="bar-value" id="valG">0</span>
             </div>
             <div class="bar-row">
               <span class="bar-label" style="color:#60a5fa">B</span>
-              <div class="bar-track"><div class="bar-fill" id="barB" style="background:#60a5fa; width:0%"></div></div>
+              <div class="bar-track"><div class="bar-fill" id="barB" style="background:#60a5fa;width:0%"></div></div>
               <span class="bar-value" id="valB">0</span>
             </div>
           </div>
@@ -661,210 +206,26 @@
         <div class="result-hex" id="resultHex">#000000</div>
         <div class="formula-hint">
           Màu phản xạ = Ánh sáng × Hệ số vật thể<br>
-          <code>R = Rₗ × Rₒ / 255</code> &nbsp;|&nbsp;
-          <code>G = Gₗ × Gₒ / 255</code> &nbsp;|&nbsp;
-          <code>B = Bₗ × Bₒ / 255</code>
+          <code>R = R_L × R_O / 255</code> &nbsp;
+          <code>G = G_L × G_O / 255</code> &nbsp;
+          <code>B = B_L × B_O / 255</code>
         </div>
       </div>
 
-    </div><!-- end controls-panel -->
-  </div><!-- end main-grid -->
+    </div><!-- /controls-panel -->
+  </div><!-- /main-grid -->
 
   <!-- ═══ FOOTER ═══ -->
   <div class="footer-bar">
-    <span><span class="dot"></span>Mô phỏng hoạt động thời gian thực</span>
-    <span>ChromaShift v1.0 · Vật lý màu sắc ánh sáng</span>
+    <span><span class="dot"></span>Thời gian thực · Kéo đèn &amp; vật thể để di chuyển tự do</span>
+    <span>ChromaShift v2.0 · Vật lý màu sắc ánh sáng</span>
   </div>
 
-</div><!-- end app-container -->
+</div><!-- /app-container -->
 
-<script>
-  // ─────────────────────────────────────────
-  //  Utilities
-  // ─────────────────────────────────────────
-  function hexToRgb(hex) {
-    const r = parseInt(hex.slice(1,3), 16);
-    const g = parseInt(hex.slice(3,5), 16);
-    const b = parseInt(hex.slice(5,7), 16);
-    return { r, g, b };
-  }
-
-  function rgbToHex(r, g, b) {
-    return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2,'0')).join('');
-  }
-
-  function toHexDisplay(hex) {
-    return hex.toUpperCase();
-  }
-
-  // ─────────────────────────────────────────
-  //  State
-  // ─────────────────────────────────────────
-  let lightHex  = '#ffffff';
-  let objectHex = '#e63333';
-  let currentShape = 'sphere';
-
-  // ─────────────────────────────────────────
-  //  Setters (called by presets & inputs)
-  // ─────────────────────────────────────────
-  function setLight(hex) {
-    lightHex = hex;
-    document.getElementById('lightColor').value = hex;
-    update();
-  }
-
-  function setObject(hex) {
-    objectHex = hex;
-    document.getElementById('objectColor').value = hex;
-    update();
-  }
-
-  function setShape(shape) {
-    currentShape = shape;
-    ['sphere','cube','prism'].forEach(s => {
-      document.getElementById('btn' + s.charAt(0).toUpperCase() + s.slice(1))
-              .classList.toggle('active', s === shape);
-    });
-    renderObject();
-  }
-
-  // ─────────────────────────────────────────
-  //  Physics: reflected color
-  // ─────────────────────────────────────────
-  function computeReflected(lHex, oHex) {
-    const l = hexToRgb(lHex);
-    const o = hexToRgb(oHex);
-    return {
-      r: Math.round(l.r * o.r / 255),
-      g: Math.round(l.g * o.g / 255),
-      b: Math.round(l.b * o.b / 255),
-    };
-  }
-
-  // ─────────────────────────────────────────
-  //  Render object shape
-  // ─────────────────────────────────────────
-  function renderObject() {
-    const obj = document.getElementById('simObject');
-    obj.className = '';
-    obj.style = '';
-
-    if (currentShape === 'sphere') {
-      obj.classList.add('shape-sphere');
-      obj.style.background = objectHex;
-    } else if (currentShape === 'cube') {
-      obj.classList.add('shape-cube');
-      obj.style.background = objectHex;
-    } else if (currentShape === 'prism') {
-      obj.classList.add('shape-prism');
-      obj.style.borderBottomColor = objectHex;
-      obj.style.background = 'transparent';
-    }
-  }
-
-  // ─────────────────────────────────────────
-  //  Photon particles
-  // ─────────────────────────────────────────
-  const NUM_PHOTONS = 7;
-  let photons = [];
-
-  function createPhotons() {
-    const container = document.getElementById('photonContainer');
-    container.innerHTML = '';
-    photons = [];
-    for (let i = 0; i < NUM_PHOTONS; i++) {
-      const p = document.createElement('div');
-      p.classList.add('photon');
-      const dx = (Math.random() - 0.5) * 60;
-      const xOffset = 50 + (Math.random() - 0.5) * 60; // % from left of stage
-      p.style.left = xOffset + '%';
-      p.style.setProperty('--dx', dx + 'px');
-      p.style.animationDelay = (Math.random() * 1.4) + 's';
-      p.style.animationDuration = (1.1 + Math.random() * 0.6) + 's';
-      container.appendChild(p);
-      photons.push(p);
-    }
-  }
-
-  function updatePhotonColor(hex) {
-    photons.forEach(p => {
-      p.style.background = hex;
-      p.style.boxShadow = `0 0 6px 2px ${hex}`;
-    });
-  }
-
-  // ─────────────────────────────────────────
-  //  Main update — ties everything together
-  // ─────────────────────────────────────────
-  function update() {
-    const lRgb = hexToRgb(lightHex);
-    const ref  = computeReflected(lightHex, objectHex);
-    const refHex = rgbToHex(ref.r, ref.g, ref.b);
-
-    // — Lamp bulb glow
-    const bulb = document.getElementById('bulb');
-    bulb.style.background    = lightHex;
-    bulb.style.boxShadow     = `0 0 18px 8px ${lightHex}`;
-
-    // — Light cone
-    document.getElementById('lightCone').style.background = lightHex;
-
-    // — Photons
-    updatePhotonColor(lightHex);
-
-    // — Hex label (light)
-    document.getElementById('lightHex').textContent = toHexDisplay(lightHex);
-
-    // — Object
-    document.getElementById('objectHex').textContent = toHexDisplay(objectHex);
-    renderObject();
-
-    // — Reflected ray line
-    const ray = document.getElementById('reflectedRay');
-    ray.style.backgroundColor = refHex;
-    ray.style.boxShadow = `0 0 10px 3px ${refHex}`;
-
-    // — Floor shadow tinted
-    document.getElementById('floorShadow').style.background =
-      `radial-gradient(ellipse, rgba(${ref.r},${ref.g},${ref.b},0.4) 0%, rgba(0,0,0,0.9) 70%)`;
-
-    // — Result swatch
-    document.getElementById('resultSwatch').style.background = refHex;
-
-    // — RGB bars
-    document.getElementById('barR').style.width = (ref.r / 255 * 100) + '%';
-    document.getElementById('barG').style.width = (ref.g / 255 * 100) + '%';
-    document.getElementById('barB').style.width = (ref.b / 255 * 100) + '%';
-    document.getElementById('valR').textContent = ref.r;
-    document.getElementById('valG').textContent = ref.g;
-    document.getElementById('valB').textContent = ref.b;
-
-    // — Result hex
-    document.getElementById('resultHex').textContent = toHexDisplay(refHex);
-
-    // — Stage ambient tint (subtle)
-    document.getElementById('stage').style.background =
-      `radial-gradient(circle at 50% 10%, rgba(${lRgb.r},${lRgb.g},${lRgb.b},0.1) 0%, #090a0d 65%)`;
-  }
-
-  // ─────────────────────────────────────────
-  //  Event listeners — live color pickers
-  // ─────────────────────────────────────────
-  document.getElementById('lightColor').addEventListener('input', e => {
-    lightHex = e.target.value;
-    update();
-  });
-
-  document.getElementById('objectColor').addEventListener('input', e => {
-    objectHex = e.target.value;
-    update();
-  });
-
-  // ─────────────────────────────────────────
-  //  Init
-  // ─────────────────────────────────────────
-  createPhotons();
-  update();
-</script>
+<!-- Thứ tự load: physics (không phụ thuộc) → stage (dùng Physics) → main (dùng cả hai) -->
+<script src="js/physics.js"></script>
+<script src="js/stage.js"></script>
+<script src="js/main.js"></script>
 </body>
 </html>
