@@ -1,127 +1,169 @@
-/**
- * physics.js — ChromaShift Color Physics Engine
- *
- * Mô hình: ánh sáng tương tác với bề mặt vật thể theo công thức nhân kênh màu.
- * Reflected(R,G,B) = Light(R,G,B) × Object(R,G,B) / 255
- *
- * Mỗi điểm trên bề mặt nhận một mức chiếu sáng tùy theo góc giữa
- * pháp tuyến bề mặt và hướng ánh sáng (dot product).
- */
-const Physics = (() => {
+// ChromaShift Physics Engine
+// Physically-correct Blinn-Phong shading with pigment color model
+'use strict';
+
+var Physics = (function () {
   'use strict';
 
-  /* ─── Utilities ─── */
+  // ── Vec3 math ──────────────────────────────────────────────────────────────
+  var v3 = {
+    add: function (a, b) { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; },
+    sub: function (a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; },
+    mul: function (a, s) { return { x: a.x * s, y: a.y * s, z: a.z * s }; },
+    dot: function (a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; },
+    len: function (a) { return Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z); },
+    norm: function (a) {
+      var l = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+      if (l === 0) return { x: 0, y: 0, z: 0 };
+      return { x: a.x / l, y: a.y / l, z: a.z / l };
+    },
+    neg: function (a) { return { x: -a.x, y: -a.y, z: -a.z }; },
+    reflect: function (d, n) {
+      // d - 2*(d·n)*n
+      var s = 2 * (d.x * n.x + d.y * n.y + d.z * n.z);
+      return { x: d.x - s * n.x, y: d.y - s * n.y, z: d.z - s * n.z };
+    }
+  };
 
-  const clamp = (v, lo = 0, hi = 255) => Math.max(lo, Math.min(hi, v));
+  // ── Color math ({r,g,b} in [0,255]) ────────────────────────────────────────
+  var col = {
+    clamp: function (c) {
+      return {
+        r: Math.max(0, Math.min(255, c.r)),
+        g: Math.max(0, Math.min(255, c.g)),
+        b: Math.max(0, Math.min(255, c.b))
+      };
+    },
+    add: function (a, b) {
+      return col.clamp({ r: a.r + b.r, g: a.g + b.g, b: a.b + b.b });
+    },
+    mul: function (c, scalar) {
+      return col.clamp({ r: c.r * scalar, g: c.g * scalar, b: c.b * scalar });
+    },
+    lerp: function (a, b, t) {
+      return col.clamp({
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t
+      });
+    },
+    // Core pigment formula: light × pigment / 255
+    pigment: function (light, pigment) {
+      return col.clamp({
+        r: light.r * pigment.r / 255,
+        g: light.g * pigment.g / 255,
+        b: light.b * pigment.b / 255
+      });
+    },
+    fromHex: function (hex) {
+      var h = hex.replace(/^#/, '');
+      if (h.length === 3) {
+        h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      }
+      return {
+        r: parseInt(h.substring(0, 2), 16),
+        g: parseInt(h.substring(2, 4), 16),
+        b: parseInt(h.substring(4, 6), 16)
+      };
+    },
+    toHex: function (c) {
+      var clamped = col.clamp(c);
+      var r = Math.round(clamped.r).toString(16).padStart(2, '0');
+      var g = Math.round(clamped.g).toString(16).padStart(2, '0');
+      var b = Math.round(clamped.b).toString(16).padStart(2, '0');
+      return '#' + r + g + b;
+    },
+    toCss: function (c) {
+      var clamped = col.clamp(c);
+      return 'rgb(' +
+        Math.round(clamped.r) + ',' +
+        Math.round(clamped.g) + ',' +
+        Math.round(clamped.b) + ')';
+    }
+  };
 
-  const hexToRgb = hex => ({
-    r: parseInt(hex.slice(1, 3), 16),
-    g: parseInt(hex.slice(3, 5), 16),
-    b: parseInt(hex.slice(5, 7), 16),
-  });
+  // ── Blinn-Phong shading ────────────────────────────────────────────────────
+  function phong(P, N, rayDir, lightPos, lightRgb, albedoRgb, metallic, roughness) {
+    // View direction toward camera
+    var V = v3.norm(v3.neg(rayDir));
 
-  const rgbToHex = ({ r, g, b }) =>
-    '#' + [r, g, b].map(v => clamp(Math.round(v)).toString(16).padStart(2, '0')).join('');
+    // Light direction
+    var LP = v3.sub(lightPos, P);
+    var dist = v3.len(LP);
+    var L = v3.norm(LP);
 
-  /** css rgb(...) string */
-  const toCss = ({ r, g, b }) =>
-    `rgb(${clamp(Math.round(r))},${clamp(Math.round(g))},${clamp(Math.round(b))})`;
+    // Blinn-Phong half-vector
+    var H = v3.norm(v3.add(L, V));
 
-  /* ─── Core math ─── */
+    // Dot products (clamped to 0)
+    var NdotL = Math.max(0, v3.dot(N, L));
+    var NdotH = Math.max(0, v3.dot(N, H));
+    var NdotV = Math.max(0, v3.dot(N, V));
 
-  /**
-   * Component-wise multiply: đây là phép tính màu phản xạ vật lý.
-   * Ánh sáng đỏ chiếu lên vật xanh → không có phản xạ nào cả.
-   */
-  const reflect = (lightHex, objectHex) => {
-    const L = hexToRgb(lightHex);
-    const O = hexToRgb(objectHex);
-    return {
-      r: (L.r * O.r) / 255,
-      g: (L.g * O.g) / 255,
-      b: (L.b * O.b) / 255,
+    // Attenuation
+    var atten = 1 / (1 + 0.03 * dist * dist);
+
+    // Colors
+    var diffCol = col.pigment(lightRgb, albedoRgb);
+    var specCol = col.lerp({ r: 255, g: 255, b: 255 }, diffCol, metallic);
+
+    // Shininess from roughness
+    var roughSq = roughness * roughness;
+    var shininess = Math.max(1, Math.min(2000, 2 / roughSq - 2));
+
+    // Fresnel (Schlick approximation)
+    var F0 = 0.04 + metallic * 0.96;
+    var fresnel = F0 + (1 - F0) * Math.pow(1 - NdotV, 5);
+
+    // Warm/cool complementary ambient fill
+    var ambRgb = {
+      r: 20 + (255 - lightRgb.r) * 0.07,
+      g: 20 + (255 - lightRgb.g) * 0.07,
+      b: 20 + (255 - lightRgb.b) * 0.07
     };
-  };
 
-  /** Scale RGB bởi một hệ số [0, 1] */
-  const scale = ({ r, g, b }, f) => ({ r: r * f, g: g * f, b: b * f });
+    // Lighting components
+    var ambient  = col.mul(col.pigment(ambRgb, albedoRgb), 0.08 + metallic * 0.03);
+    var diffuse  = col.mul(diffCol, NdotL * atten * (1 - metallic * 0.5));
+    var specular = col.mul(specCol, Math.pow(NdotH, shininess) * atten * fresnel);
 
-  /** Linear interpolate giữa hai màu, t ∈ [0, 1] */
-  const lerp = (a, b, t) => ({
-    r: a.r + (b.r - a.r) * t,
-    g: a.g + (b.g - a.g) * t,
-    b: a.b + (b.b - a.b) * t,
-  });
+    return col.add(ambient, col.add(diffuse, specular));
+  }
 
-  /**
-   * Tính toán các vùng sáng-tối trên bề mặt vật thể.
-   *
-   * @param {string} lightHex  - màu nguồn sáng
-   * @param {string} objectHex - màu thuần của vật thể (pigment)
-   * @param {number} intensity - cường độ ánh sáng [0, 1] (giảm theo khoảng cách)
-   * @param {number} metallic  - độ kim loại [0, 1]:
-   *   0 = hoàn toàn matte (khuếch tán), 1 = hoàn toàn metallic (phản chiếu)
-   *
-   * Vật liệu matte:
-   *   - Ánh sáng tán xạ đều theo mọi hướng (Lambertian diffuse)
-   *   - Highlight rộng, mềm
-   *   - Bóng sáng (specular) gần như trắng
-   *
-   * Vật liệu metallic:
-   *   - Phản xạ gương: highlight cực nhỏ và sắc nét
-   *   - Màu highlight = màu nguồn sáng (không bị trắng hóa)
-   *   - Vùng tối tối hơn (ít ambient hơn)
-   *   - Toàn bề mặt nhuốm màu ánh sáng nhiều hơn
-   *
-   * @returns {{ lit, midLight, objectNatural, shadow, reflected, specular, objRgb }}
-   */
-  const computeLighting = (lightHex, objectHex, intensity = 1.0, metallic = 0.0) => {
-    const reflected  = reflect(lightHex, objectHex);
-    const objRgb     = hexToRgb(objectHex);
-    const lightRgb   = hexToRgb(lightHex);
+  // ── Zone colours for preview swatches ─────────────────────────────────────
+  function computeZones(lightRgb, albedoRgb, metallic, roughness, intensity) {
+    if (intensity === undefined) intensity = 1.0;
 
-    // Màu lit: vật liệu metallic sẽ nhuốm thêm màu ánh sáng
-    const metallicBlend = metallic * 0.55;
-    const litBase  = lerp(reflected, scale(lightRgb, intensity), metallicBlend);
-    const lit      = scale(litBase, intensity);
+    var diffCol = col.pigment(lightRgb, albedoRgb);
+    var specCol = col.lerp({ r: 255, g: 255, b: 255 }, diffCol, metallic);
 
-    // Midtone: blend từ màu tự nhiên sang màu lit
-    const midLight = lerp(objRgb, lit, 0.5 + metallic * 0.1);
+    var ambRgb = {
+      r: 20 + (255 - lightRgb.r) * 0.07,
+      g: 20 + (255 - lightRgb.g) * 0.07,
+      b: 20 + (255 - lightRgb.b) * 0.07
+    };
 
-    // Ambient: metallic có ambient thấp hơn rất nhiều
-    const ambientBase = 0.12 - metallic * 0.09;
-    const objectNatural = scale(objRgb, ambientBase + 0.07 * intensity);
+    var shadow    = col.mul(col.pigment(ambRgb, albedoRgb), 0.08);
+    var lit       = col.mul(diffCol, intensity * (1 - metallic * 0.5));
+    var mid       = col.lerp(col.mul(albedoRgb, 0.35), lit, 0.5);
+    var highlight = col.add(lit, col.mul(specCol, (0.4 + metallic * 0.7) * intensity));
 
-    // Shadow: metallic tối hơn (ít photon tán xạ hơn)
-    const shadow = scale(objRgb, 0.04 - metallic * 0.025);
+    return { highlight: highlight, lit: lit, mid: mid, shadow: shadow };
+  }
 
-    // ── Specular highlight (điểm sáng chói) ──
-    // Matte: specular trắng, nhỏ
-    // Metallic: specular = màu ánh sáng, rất sắc nét
-    const specularColor = lerp({ r: 255, g: 255, b: 255 }, lightRgb, metallic);
-    // Cường độ specular tăng theo metallic
-    const specularStrength = Math.min(1.0, intensity * (0.4 + metallic * 0.8));
-    const specular = scale(specularColor, specularStrength);
+  // ── Intensity from distance ────────────────────────────────────────────────
+  function intensityFromDistance(dist) {
+    var v = 0.22 / (dist * dist + 0.07);
+    return Math.max(0.15, Math.min(1.0, v));
+  }
 
-    return { lit, midLight, objectNatural, shadow, reflected, specular, objRgb };
-  };
-
-  /**
-   * Tính cường độ ánh sáng theo khoảng cách (inverse-square law, đã chuẩn hóa).
-   * @param {number} distNorm - khoảng cách normalize [0 … √2]
-   */
-  const intensityFromDistance = (distNorm) =>
-    clamp(0.22 / (distNorm * distNorm + 0.07), 0.18, 1.0);
-
-  /* ─── Public API ─── */
+  // ── Public API ─────────────────────────────────────────────────────────────
   return {
-    hexToRgb,
-    rgbToHex,
-    toCss,
-    reflect,
-    scale,
-    lerp,
-    computeLighting,
-    intensityFromDistance,
+    v3: v3,
+    col: col,
+    phong: phong,
+    computeZones: computeZones,
+    intensityFromDistance: intensityFromDistance
   };
-})();
+
+}());
