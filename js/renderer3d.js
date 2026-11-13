@@ -13,17 +13,222 @@ var Renderer3D = (function () {
   var EPS     = 1e-4;
 
   // ── Geometry catalogue (unit-scale, centered at local origin) ─────────────
+  // Analytic shapes stay exact/fast; everything else is a signed-distance
+  // function that gets sphere-traced, which is what makes the library cheap
+  // to grow: a new object is one SDF plus one line in buildGeo.
+  function sdfGeo(sdf, s, boundUnit) {
+    return {
+      type: 'sdf',
+      boundR: boundUnit * s,
+      fn: function (x, y, z) { return sdf(x / s, y / s, z / s) * s; }
+    };
+  }
+
   function buildGeo(shape, scale) {
     scale = scale || 1;
     switch (shape) {
-      case 'sphere':   return { type: 'sphere',   R: 1.0 * scale };
-      case 'cube':     return { type: 'cube',     min: { x: -.75 * scale, y: -.75 * scale, z: -.75 * scale },
-                                                    max: { x:  .75 * scale, y:  .75 * scale, z:  .75 * scale } };
-      case 'cylinder': return { type: 'cylinder', r: .7 * scale, ymin: -.9 * scale, ymax: .9 * scale };
-      case 'cone':     return { type: 'cone',     r: .85 * scale, h: 1.7 * scale, apexY: .85 * scale };
-      case 'torus':    return { type: 'torus',    R: .75 * scale, r: .3 * scale };
-      default:         return { type: 'sphere',   R: 1.0 * scale };
+      case 'sphere':     return { type: 'sphere', R: 1.0 * scale };
+      case 'cube':       return { type: 'cube', min: { x: -.75 * scale, y: -.75 * scale, z: -.75 * scale },
+                                                  max: { x:  .75 * scale, y:  .75 * scale, z:  .75 * scale } };
+      case 'cylinder':   return { type: 'cylinder', r: .7 * scale, ymin: -.9 * scale, ymax: .9 * scale };
+      case 'cone':       return { type: 'cone', r: .85 * scale, h: 1.7 * scale, apexY: .85 * scale };
+      case 'capsule':    return { type: 'capsule', r: .5 * scale, halfH: .55 * scale };
+      case 'ellipsoid':  return { type: 'ellipsoid', rx: 1.15 * scale, ry: .78 * scale, rz: .78 * scale };
+
+      case 'torus':      return sdfGeo(sdTorus, scale, 1.1);
+      case 'octahedron': return sdfGeo(sdOctahedron, scale, 1.2);
+      case 'pyramid':    return sdfGeo(sdPyramidCentered, scale, 1.3);
+      case 'hexprism':   return sdfGeo(sdHexPrism, scale, 1.1);
+
+      case 'head':       return sdfGeo(sdHead, scale, 1.25);
+      case 'arm':        return sdfGeo(sdArm, scale * 0.85, 1.45);
+      case 'leg':        return sdfGeo(sdLeg, scale * 0.8, 1.4);
+      case 'torso':      return sdfGeo(sdTorso, scale, 1.3);
+      case 'figure':     return sdfGeo(sdFigure, scale, 1.35);
+
+      default: return { type: 'sphere', R: 1.0 * scale };
     }
+  }
+
+  // ── SDF building blocks (scalar args, so sampling allocates nothing) ──────
+  function smin(a, b, k) {
+    var h = Math.max(k - Math.abs(a - b), 0) / k;
+    return Math.min(a, b) - h * h * k * 0.25;
+  }
+
+  function sdBall(x, y, z, cx, cy, cz, r) {
+    var dx = x - cx, dy = y - cy, dz = z - cz;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz) - r;
+  }
+
+  function sdEllip(x, y, z, cx, cy, cz, rx, ry, rz) {
+    var px = x - cx, py = y - cy, pz = z - cz;
+    var ax = px / rx, ay = py / ry, az = pz / rz;
+    var k0 = Math.sqrt(ax * ax + ay * ay + az * az);
+    if (k0 < 1e-6) return -Math.min(rx, ry, rz);
+    var bx = px / (rx * rx), by = py / (ry * ry), bz = pz / (rz * rz);
+    var k1 = Math.sqrt(bx * bx + by * by + bz * bz);
+    return k0 * (k0 - 1) / k1;
+  }
+
+  // Tapered capsule between a (radius r1) and b (radius r2): limbs.
+  function sdRoundCone(x, y, z, ax, ay, az, bx, by, bz, r1, r2) {
+    var bax = bx - ax, bay = by - ay, baz = bz - az;
+    var l2 = bax * bax + bay * bay + baz * baz;
+    var rr = r1 - r2;
+    var a2 = l2 - rr * rr;
+    var il2 = 1 / l2;
+    var pax = x - ax, pay = y - ay, paz = z - az;
+    var yy = pax * bax + pay * bay + paz * baz;
+    var zz = yy - l2;
+    var vx = pax * l2 - bax * yy, vy = pay * l2 - bay * yy, vz = paz * l2 - baz * yy;
+    var x2 = vx * vx + vy * vy + vz * vz;
+    var y2 = yy * yy * l2;
+    var z2 = zz * zz * l2;
+    var k = Math.sign(rr) * rr * rr * x2;
+    if (Math.sign(zz) * a2 * z2 > k) return Math.sqrt(x2 + z2) * il2 - r2;
+    if (Math.sign(yy) * a2 * y2 < k) return Math.sqrt(x2 + y2) * il2 - r1;
+    return (Math.sqrt(x2 * a2 * il2) + yy * rr) * il2 - r1;
+  }
+
+  // ── Primitive SDFs ─────────────────────────────────────────────────────────
+  function sdTorus(x, y, z) {
+    var q = Math.sqrt(x * x + z * z) - 0.75;
+    return Math.sqrt(q * q + y * y) - 0.3;
+  }
+
+  function sdOctahedron(x, y, z) {
+    var s = 1.0;
+    var ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
+    var m = ax + ay + az - s;
+    var qx, qy, qz;
+    if (3 * ax < m)      { qx = ax; qy = ay; qz = az; }
+    else if (3 * ay < m) { qx = ay; qy = az; qz = ax; }
+    else if (3 * az < m) { qx = az; qy = ax; qz = ay; }
+    else return m * 0.57735027;
+    var k = Math.max(0, Math.min(s, 0.5 * (qz - qy + s)));
+    var dy = qy - s + k, dz = qz - k;
+    return Math.sqrt(qx * qx + dy * dy + dz * dz);
+  }
+
+  function sdPyramidCentered(x, y, z) {
+    var h = 1.1;
+    var py = y + h / 2;
+    var m2 = h * h + 0.25;
+    var px = Math.abs(x), pz = Math.abs(z);
+    if (pz > px) { var tmp = px; px = pz; pz = tmp; }
+    px -= 0.5; pz -= 0.5;
+    var qx = pz, qy = h * py - 0.5 * px, qz = h * px + 0.5 * py;
+    var s = Math.max(-qx, 0);
+    var t = Math.max(0, Math.min(1, (qy - 0.5 * pz) / (m2 + 0.25)));
+    var a = m2 * (qx + s) * (qx + s) + qy * qy;
+    var b = m2 * (qx + 0.5 * t) * (qx + 0.5 * t) + (qy - m2 * t) * (qy - m2 * t);
+    var d2 = (Math.min(qy, -qx * m2 - qy * 0.5) > 0) ? 0 : Math.min(a, b);
+    return Math.sqrt((d2 + qz * qz) / m2) * Math.sign(Math.max(qz, -py));
+  }
+
+  function sdHexPrism(x, y, z) {
+    // Hex cross-section lives in the XZ plane, extruded along Y.
+    var hexR = 0.62, halfHeight = 0.55;
+    var kx = -0.8660254, ky = 0.5, kz = 0.57735;
+    var px = Math.abs(x), py = Math.abs(z), pz = Math.abs(y);
+    var m = 2 * Math.min(kx * px + ky * py, 0);
+    px -= m * kx; py -= m * ky;
+    var clampedX = Math.max(-kz * hexR, Math.min(kz * hexR, px));
+    var dx = Math.hypot(px - clampedX, py - hexR) * Math.sign(py - hexR);
+    var dz = pz - halfHeight;
+    return Math.min(Math.max(dx, dz), 0) + Math.hypot(Math.max(dx, 0), Math.max(dz, 0));
+  }
+
+  // ── Figure-study SDFs (artist's mannequin parts; +Z is the front) ─────────
+  function sdHead(x, y0, z) {
+    var y = y0 - 0.25;
+    var ax = Math.abs(x);
+    var d = sdEllip(x, y, z, 0, 0.18, -0.05, 0.52, 0.58, 0.62);              // cranium
+    d = smin(d, sdEllip(x, y, z, 0, -0.18, 0.12, 0.40, 0.50, 0.45), 0.15);   // face + jaw
+    d = smin(d, sdRoundCone(x, y, z, 0, -0.45, -0.08, 0, -1.0, -0.12, 0.22, 0.25), 0.10); // neck
+    d = smin(d, sdRoundCone(x, y, z, 0, 0.05, 0.52, 0, -0.12, 0.62, 0.05, 0.08), 0.06);   // nose
+    d = smin(d, sdEllip(ax, y, z, 0.5, 0.0, -0.05, 0.07, 0.15, 0.10), 0.04);  // ears
+    var socket = sdBall(ax, y, z, 0.19, 0.04, 0.60, 0.11);                    // eye sockets
+    return -smin(-d, socket, 0.05);
+  }
+
+  function sdArm(x, y, z) {
+    var d = sdBall(x, y, z, 0, 1.05, 0, 0.24);                                              // shoulder joint
+    d = smin(d, sdRoundCone(x, y, z, 0, 1.05, 0, 0.03, 0.15, -0.03, 0.21, 0.16), 0.03);     // upper arm
+    d = smin(d, sdBall(x, y, z, 0.03, 0.15, -0.03, 0.165), 0.03);                           // elbow joint
+    d = smin(d, sdRoundCone(x, y, z, 0.03, 0.15, -0.03, 0, -0.72, 0.18, 0.155, 0.10), 0.03); // forearm
+    d = smin(d, sdBall(x, y, z, 0, -0.72, 0.18, 0.105), 0.03);                              // wrist joint
+    d = smin(d, sdEllip(x, y, z, 0, -0.96, 0.26, 0.06, 0.20, 0.11), 0.04);                  // hand
+    d = smin(d, sdRoundCone(x, y, z, 0.04, -0.85, 0.30, 0.10, -0.98, 0.38, 0.04, 0.03), 0.03); // thumb
+    return d;
+  }
+
+  function sdLeg(x, y0, z) {
+    var y = y0 + 0.13;
+    var d = sdBall(x, y, z, 0, 1.1, 0, 0.27);                                               // hip joint
+    d = smin(d, sdRoundCone(x, y, z, 0, 1.1, 0, 0, 0.1, 0.04, 0.26, 0.17), 0.03);           // thigh
+    d = smin(d, sdBall(x, y, z, 0, 0.1, 0.04, 0.175), 0.03);                                // knee joint
+    d = smin(d, sdRoundCone(x, y, z, 0, 0.1, 0.04, 0, -0.85, -0.04, 0.16, 0.095), 0.03);    // shin
+    d = smin(d, sdEllip(x, y, z, 0, -0.2, -0.08, 0.13, 0.30, 0.14), 0.10);                  // calf
+    d = smin(d, sdBall(x, y, z, 0, -0.85, -0.04, 0.10), 0.03);                              // ankle joint
+    var foot = sdRoundCone(x, y, z, 0, -0.98, -0.08, 0, -1.02, 0.38, 0.11, 0.075);
+    foot = Math.max(foot, -1.1 - y);                                                        // flat sole
+    return smin(d, foot, 0.04);
+  }
+
+  function sdTorso(x, y, z) {
+    var d = sdEllip(x, y, z, 0, 0.35, 0, 0.50, 0.48, 0.30);                                 // rib cage
+    d = smin(d, sdEllip(x, y, z, 0, -0.15, 0, 0.36, 0.40, 0.25), 0.15);                     // abdomen
+    d = smin(d, sdEllip(x, y, z, 0, -0.60, 0, 0.45, 0.30, 0.28), 0.15);                     // pelvis
+    d = smin(d, sdRoundCone(x, y, z, 0, 0.75, 0, 0, 1.0, 0, 0.14, 0.13), 0.08);             // neck stub
+    return d;
+  }
+
+  function sdFigure(x0, y, z) {
+    var x = Math.abs(x0); // left/right symmetric
+    var d = sdEllip(x, y, z, 0, 1.0, 0, 0.13, 0.16, 0.15);                                  // head
+    d = smin(d, sdRoundCone(x, y, z, 0, 0.86, 0, 0, 0.76, 0, 0.05, 0.055), 0.03);           // neck
+    d = smin(d, sdEllip(x, y, z, 0, 0.55, 0, 0.24, 0.22, 0.14), 0.04);                      // chest
+    d = smin(d, sdEllip(x, y, z, 0, 0.27, 0, 0.17, 0.18, 0.115), 0.06);                     // abdomen
+    d = smin(d, sdEllip(x, y, z, 0, 0.05, 0, 0.21, 0.14, 0.13), 0.06);                      // pelvis
+    d = smin(d, sdBall(x, y, z, 0.30, 0.68, 0, 0.075), 0.02);                               // shoulder
+    d = smin(d, sdRoundCone(x, y, z, 0.30, 0.68, 0, 0.36, 0.33, 0, 0.065, 0.05), 0.02);     // upper arm
+    d = smin(d, sdRoundCone(x, y, z, 0.36, 0.33, 0, 0.40, 0.0, 0.06, 0.05, 0.035), 0.02);   // forearm
+    d = smin(d, sdEllip(x, y, z, 0.41, -0.10, 0.08, 0.03, 0.08, 0.045), 0.02);              // hand
+    d = smin(d, sdBall(x, y, z, 0.11, -0.05, 0, 0.10), 0.02);                               // hip
+    d = smin(d, sdRoundCone(x, y, z, 0.11, -0.05, 0, 0.13, -0.55, 0.02, 0.095, 0.065), 0.02); // thigh
+    d = smin(d, sdRoundCone(x, y, z, 0.13, -0.55, 0.02, 0.14, -1.05, -0.01, 0.062, 0.04), 0.02); // shin
+    d = smin(d, sdRoundCone(x, y, z, 0.14, -1.12, -0.02, 0.14, -1.14, 0.14, 0.045, 0.035), 0.02); // foot
+    return d;
+  }
+
+  // Generic sphere-tracer for every SDF shape in the catalogue above.
+  function marchSDF(ray, sdfFn, boundR) {
+    // Start where the ray enters the bounding sphere, so camera distance
+    // never eats into the march budget.
+    var bound = hitSphere(ray, boundR);
+    if (!bound) return null;
+    var o = ray.orig, d = ray.dir;
+    var t = Math.max(0, bound.t - 0.01);
+    var tMax = t + boundR * 2.4;
+
+    for (var step = 0; step < 110; step++) {
+      var px = o.x + t * d.x, py = o.y + t * d.y, pz = o.z + t * d.z;
+      var dist = sdfFn(px, py, pz);
+      if (dist < 0.0006) {
+        var h = 0.0006;
+        var N = Physics.v3.norm({
+          x: sdfFn(px + h, py, pz) - sdfFn(px - h, py, pz),
+          y: sdfFn(px, py + h, pz) - sdfFn(px, py - h, pz),
+          z: sdfFn(px, py, pz + h) - sdfFn(px, py, pz - h)
+        });
+        return { t: t, P: { x: px, y: py, z: pz }, N: N };
+      }
+      if (t > tMax) break;
+      t += Math.max(dist * 0.8, 0.0008);
+    }
+    return null;
   }
 
   // ── Shape intersectors (local object space) ────────────────────────────────
@@ -157,42 +362,89 @@ var Renderer3D = (function () {
     return best;
   }
 
-  function torusSDF(x, y, z, R, r) {
-    var q = Math.sqrt(x * x + z * z) - R;
-    return Math.sqrt(q * q + y * y) - r;
+  function hitCapsule(ray, cap) {
+    var r = cap.r, h = cap.halfH;
+    var o = ray.orig, d = ray.dir;
+    var best = null;
+
+    // Cylindrical body (no end caps — those are the two hemispheres below)
+    var a = d.x * d.x + d.z * d.z;
+    if (Math.abs(a) > 1e-10) {
+      var b = 2 * (o.x * d.x + o.z * d.z);
+      var c = o.x * o.x + o.z * o.z - r * r;
+      var disc = b * b - 4 * a * c;
+      if (disc >= 0) {
+        var sq = Math.sqrt(disc);
+        var roots = [(-b - sq) / (2 * a), (-b + sq) / (2 * a)];
+        for (var i = 0; i < 2; i++) {
+          var t = roots[i];
+          if (t < EPS) continue;
+          var py = o.y + t * d.y;
+          if (py >= -h && py <= h) {
+            var px = o.x + t * d.x, pz = o.z + t * d.z;
+            best = { t: t, P: { x: px, y: py, z: pz }, N: { x: px / r, y: 0, z: pz / r } };
+            break;
+          }
+        }
+      }
+    }
+
+    // Two hemispherical caps (full-sphere test, keep only the outward half)
+    var centers = [h, -h];
+    for (var ci = 0; ci < 2; ci++) {
+      var cy = centers[ci];
+      var so = { x: o.x, y: o.y - cy, z: o.z };
+      var sb = Physics.v3.dot(so, d);
+      var sc = Physics.v3.dot(so, so) - r * r;
+      var sdisc = sb * sb - sc;
+      if (sdisc < 0) continue;
+      var ssq = Math.sqrt(sdisc);
+      var ts = [-sb - ssq, -sb + ssq];
+      for (var k = 0; k < 2; k++) {
+        var st = ts[k];
+        if (st < EPS) continue;
+        var spy = o.y + st * d.y;
+        if ((cy > 0 && spy >= cy) || (cy < 0 && spy <= cy)) {
+          if (!best || st < best.t) {
+            var spx = o.x + st * d.x, spz = o.z + st * d.z;
+            var N = Physics.v3.norm({ x: spx, y: spy - cy, z: spz });
+            best = { t: st, P: { x: spx, y: spy, z: spz }, N: N };
+          }
+          break;
+        }
+      }
+    }
+    return best;
   }
 
-  function hitTorus(ray, torus) {
-    if (!hitSphere(ray, torus.R + torus.r + 0.05)) return null;
+  function hitEllipsoid(ray, e) {
     var o = ray.orig, d = ray.dir;
-    var R = torus.R, r = torus.r;
-    var t = 0.1;
-    for (var step = 0; step < 64; step++) {
-      var px = o.x + t * d.x, py = o.y + t * d.y, pz = o.z + t * d.z;
-      var dist = torusSDF(px, py, pz, R, r);
-      if (dist < 0.0006) {
-        var h = 0.0006;
-        var N = Physics.v3.norm({
-          x: torusSDF(px + h, py, pz, R, r) - torusSDF(px - h, py, pz, R, r),
-          y: torusSDF(px, py + h, pz, R, r) - torusSDF(px, py - h, pz, R, r),
-          z: torusSDF(px, py, pz + h, R, r) - torusSDF(px, py, pz - h, R, r)
-        });
-        return { t: t, P: { x: px, y: py, z: pz }, N: N };
-      }
-      if (t > 12) break;
-      t += Math.max(dist * 0.85, 0.001);
-    }
-    return null;
+    var ox = o.x / e.rx, oy = o.y / e.ry, oz = o.z / e.rz;
+    var dx = d.x / e.rx, dy = d.y / e.ry, dz = d.z / e.rz;
+    var a = dx * dx + dy * dy + dz * dz;
+    var b = 2 * (ox * dx + oy * dy + oz * dz);
+    var c = ox * ox + oy * oy + oz * oz - 1;
+    var disc = b * b - 4 * a * c;
+    if (disc < 0) return null;
+    var sq = Math.sqrt(disc);
+    var t = (-b - sq) / (2 * a);
+    if (t < EPS) t = (-b + sq) / (2 * a);
+    if (t < EPS) return null;
+    var P = { x: o.x + t * d.x, y: o.y + t * d.y, z: o.z + t * d.z };
+    var N = Physics.v3.norm({ x: P.x / (e.rx * e.rx), y: P.y / (e.ry * e.ry), z: P.z / (e.rz * e.rz) });
+    return { t: t, P: P, N: N };
   }
 
   function intersect(ray, geo) {
     switch (geo.type) {
-      case 'sphere':   return hitSphere(ray, geo.R);
-      case 'cube':     return hitBox(ray, geo);
-      case 'cylinder': return hitCylinder(ray, geo);
-      case 'cone':     return hitCone(ray, geo);
-      case 'torus':    return hitTorus(ray, geo);
-      default:         return null;
+      case 'sphere':    return hitSphere(ray, geo.R);
+      case 'cube':      return hitBox(ray, geo);
+      case 'cylinder':  return hitCylinder(ray, geo);
+      case 'cone':      return hitCone(ray, geo);
+      case 'capsule':   return hitCapsule(ray, geo);
+      case 'ellipsoid': return hitEllipsoid(ray, geo);
+      case 'sdf':       return marchSDF(ray, geo.fn, geo.boundR);
+      default:          return null;
     }
   }
 
@@ -210,7 +462,9 @@ var Renderer3D = (function () {
       if (i === skipObjIdx) continue;
       var obj = objects[i];
       var local = { orig: Physics.v3.sub(ray.orig, obj.pos), dir: ray.dir };
-      var hit = intersect(local, buildGeo(obj.shape, obj.scale));
+      var geoKey = obj.shape + '|' + obj.scale;
+      if (obj._geoKey !== geoKey) { obj._geo = buildGeo(obj.shape, obj.scale); obj._geoKey = geoKey; }
+      var hit = intersect(local, obj._geo);
       if (hit && (!best || hit.t < best.t)) { best = hit; bestKind = 'object'; bestIdx = i; }
     }
 

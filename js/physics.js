@@ -105,6 +105,7 @@ var Physics = (function () {
     var fresnel = F0 + (1 - F0) * Math.pow(1 - NdotV, 5);
 
     var total = { r: 0, g: 0, b: 0 };
+    var fillRgb = { r: 0, g: 0, b: 0 }; // accumulated soft bounce-light tint
 
     for (var i = 0; i < lights.length; i++) {
       var light = lights[i];
@@ -113,7 +114,8 @@ var Physics = (function () {
       var L = v3.norm(LP);
       var H = v3.norm(v3.add(L, V));
 
-      var NdotL = Math.max(0, v3.dot(N, L));
+      var NdotLraw = v3.dot(N, L);
+      var NdotL = Math.max(0, NdotLraw);
       var NdotH = Math.max(0, v3.dot(N, H));
 
       var atten = (light.intensity !== undefined ? light.intensity : 1) /
@@ -122,13 +124,29 @@ var Physics = (function () {
       var diffCol = col.pigment(light.rgb, albedoRgb);
       var specCol = col.lerp({ r: 255, g: 255, b: 255 }, diffCol, metallic);
 
+      // Half-Lambert "wrap" term: real surfaces are never lit by a single
+      // point light with zero fill — bounce light from the room/other
+      // surfaces softens the day/night terminator instead of cutting it
+      // off hard at NdotL=0. This is what was missing before: where two
+      // lit hemispheres meet (NdotL≈0 for *both* lights at once) the old
+      // hard-clamped model produced a dark ring with almost no light
+      // term and only a flat, colorless 0.035 ambient to fill it.
+      var wrap = Math.pow(Math.max(0, NdotLraw * 0.5 + 0.5), 2);
+
       var diffuse  = col.mul(diffCol, NdotL * atten * (1 - metallic * 0.6));
       var specular = col.mul(specCol, Math.pow(NdotH, shininess) * atten * fresnel);
 
       total = col.add(total, col.add(diffuse, specular));
+
+      // Each light also contributes a softer, wider "fill" contribution
+      // (as if bouncing once off nearby surfaces) so the terminator band
+      // between overlapping lights is tinted by them, not pitch black.
+      fillRgb = col.add(fillRgb, col.mul(col.pigment(light.rgb, albedoRgb), wrap * atten * 0.22));
     }
 
-    // Faint ambient so unlit sides aren't pure black
+    total = col.add(total, fillRgb);
+
+    // Faint neutral ambient so completely unlit sides still aren't pure black
     total = col.add(total, col.mul(albedoRgb, 0.035));
 
     // Environment reflection: glossier + more metallic ⇒ sees its surroundings more clearly

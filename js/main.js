@@ -7,8 +7,25 @@
  */
 'use strict';
 
-var SHAPES = ['sphere', 'cube', 'cylinder', 'cone', 'torus'];
-var SHAPE_ICON = { sphere: '⚽', cube: '🧊', cylinder: '🥫', cone: '🔺', torus: '🍩' };
+/**
+ * Shape library — add a new entry here (plus its intersector/SDF in
+ * renderer3d.js) to grow the catalogue. `keywords` feed the search box
+ * in the shape picker so items can be found by nickname, not just id.
+ */
+var SHAPE_LIBRARY = [
+  { id: 'sphere',     label: 'Hình cầu',          icon: '⚽', keywords: 'ball bong tron qua cau' },
+  { id: 'cube',       label: 'Hình hộp',          icon: '🧊', keywords: 'box vuong khoi lap phuong' },
+  { id: 'cylinder',   label: 'Hình trụ',          icon: '🥫', keywords: 'lon pin tru can' },
+  { id: 'cone',       label: 'Hình nón (kem)',    icon: '🍦', keywords: 'non kem ice cream oc que' },
+  { id: 'torus',      label: 'Vòng xuyến (donut)', icon: '🍩', keywords: 'donut vong nhan banh ring' },
+  { id: 'capsule',    label: 'Viên nang',          icon: '💊', keywords: 'pill thuoc vien capsule' },
+  { id: 'ellipsoid',  label: 'Hình trứng',         icon: '🥚', keywords: 'egg trung oval bau duc' },
+  { id: 'octahedron', label: 'Kim cương (bát diện)', icon: '💎', keywords: 'diamond gem da quy bat dien' },
+  { id: 'pyramid',    label: 'Kim tự tháp',        icon: '🔺', keywords: 'ai cap egypt pyramid thap' },
+  { id: 'hexprism',   label: 'Lăng trụ lục giác',  icon: '⬡',  keywords: 'oc vit bulong hex nut luc giac' }
+];
+var SHAPE_BY_ID = {};
+SHAPE_LIBRARY.forEach(function (s) { SHAPE_BY_ID[s.id] = s; });
 
 var scene = {
   objects: [
@@ -187,6 +204,97 @@ function renderLightsList() {
   });
 }
 
+/* ══════════════════════════════════════════
+   SHAPE LIBRARY PICKER — searchable, scrollable dropdown
+══════════════════════════════════════════ */
+var _openShapePanel = null;
+
+function createShapePicker(initialShape, onPick) {
+  var wrap = document.createElement('div');
+  wrap.className = 'shape-picker-wrap';
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'shape-picker-btn';
+
+  var panel = document.createElement('div');
+  panel.className = 'shape-picker-panel';
+  panel.style.display = 'none';
+
+  var search = document.createElement('input');
+  search.type = 'text';
+  search.placeholder = 'Tìm vật thể… (vd: trụ, kim cương, egg)';
+  search.className = 'shape-search-input';
+
+  var listEl = document.createElement('div');
+  listEl.className = 'shape-picker-list';
+
+  function setButton(shapeId) {
+    var s = SHAPE_BY_ID[shapeId] || SHAPE_LIBRARY[0];
+    btn.textContent = s.icon + ' ' + s.label + ' ▾';
+  }
+
+  function renderItems(filter) {
+    listEl.innerHTML = '';
+    var q = (filter || '').trim().toLowerCase();
+    var matches = SHAPE_LIBRARY.filter(function (s) {
+      if (!q) return true;
+      return (s.label.toLowerCase() + ' ' + s.id + ' ' + s.keywords).indexOf(q) !== -1;
+    });
+    if (matches.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'shape-picker-empty';
+      empty.textContent = 'Không tìm thấy vật thể phù hợp';
+      listEl.appendChild(empty);
+      return;
+    }
+    matches.forEach(function (s) {
+      var item = document.createElement('div');
+      item.className = 'shape-picker-item';
+      item.textContent = s.icon + ' ' + s.label;
+      item.addEventListener('click', function () {
+        setButton(s.id);
+        closePanel();
+        onPick(s.id);
+      });
+      listEl.appendChild(item);
+    });
+  }
+
+  function openPanel() {
+    if (_openShapePanel && _openShapePanel !== panel) _openShapePanel.style.display = 'none';
+    panel.style.display = 'block';
+    _openShapePanel = panel;
+    search.value = '';
+    renderItems('');
+    search.focus();
+  }
+  function closePanel() {
+    panel.style.display = 'none';
+    if (_openShapePanel === panel) _openShapePanel = null;
+  }
+
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (panel.style.display === 'none') openPanel();
+    else closePanel();
+  });
+  search.addEventListener('input', function () { renderItems(search.value); });
+  panel.addEventListener('click', function (e) { e.stopPropagation(); });
+
+  setButton(initialShape);
+  panel.appendChild(search);
+  panel.appendChild(listEl);
+  wrap.appendChild(btn);
+  wrap.appendChild(panel);
+  return wrap;
+}
+
+// Clicking anywhere outside an open shape picker closes it.
+document.addEventListener('click', function () {
+  if (_openShapePanel) { _openShapePanel.style.display = 'none'; _openShapePanel = null; }
+});
+
 function renderObjectsList() {
   var list = document.getElementById('objectsList');
   list.innerHTML = '';
@@ -197,17 +305,9 @@ function renderObjectsList() {
     var head = document.createElement('div');
     head.className = 'item-head';
 
-    var shapeSelect = document.createElement('select');
-    shapeSelect.className = 'shape-select';
-    SHAPES.forEach(function (s) {
-      var opt = document.createElement('option');
-      opt.value = s;
-      opt.textContent = SHAPE_ICON[s] + ' ' + s;
-      if (s === obj.shape) opt.selected = true;
-      shapeSelect.appendChild(opt);
-    });
-    shapeSelect.addEventListener('change', function () {
-      obj.shape = shapeSelect.value; scheduleUpdate();
+    var shapePicker = createShapePicker(obj.shape, function (newShape) {
+      obj.shape = newShape;
+      scheduleUpdate();
     });
 
     var colorInput = document.createElement('input');
@@ -234,7 +334,7 @@ function renderObjectsList() {
       scheduleUpdate();
     });
 
-    head.appendChild(shapeSelect);
+    head.appendChild(shapePicker);
     head.appendChild(colorInput);
     head.appendChild(hex);
     head.appendChild(removeBtn);
@@ -313,7 +413,7 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btnAddObject').addEventListener('click', function () {
     scene.objects.push({
       id: nextObjId++,
-      shape: SHAPES[Math.floor(Math.random() * SHAPES.length)],
+      shape: SHAPE_LIBRARY[Math.floor(Math.random() * SHAPE_LIBRARY.length)].id,
       pos: { x: (Math.random() - 0.5) * 4, y: 0, z: (Math.random() - 0.5) * 2 },
       scale: 0.9,
       color: Physics.col.fromHex('#9b59b6'),
