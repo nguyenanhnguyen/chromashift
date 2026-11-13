@@ -22,7 +22,12 @@ var SHAPE_LIBRARY = [
   { id: 'ellipsoid',  label: 'Hình trứng',         icon: '🥚', keywords: 'egg trung oval bau duc' },
   { id: 'octahedron', label: 'Kim cương (bát diện)', icon: '💎', keywords: 'diamond gem da quy bat dien' },
   { id: 'pyramid',    label: 'Kim tự tháp',        icon: '🔺', keywords: 'ai cap egypt pyramid thap' },
-  { id: 'hexprism',   label: 'Lăng trụ lục giác',  icon: '⬡',  keywords: 'oc vit bulong hex nut luc giac' }
+  { id: 'hexprism',   label: 'Lăng trụ lục giác',  icon: '⬡',  keywords: 'oc vit bulong hex nut luc giac' },
+  { id: 'head',       label: 'Đầu người mẫu',      icon: '🗿', keywords: 'dau head mat face nhan vat mannequin co' },
+  { id: 'arm',        label: 'Cánh tay',           icon: '💪', keywords: 'tay arm ban tay hand khuyu nhan vat mannequin' },
+  { id: 'leg',        label: 'Chân',               icon: '🦵', keywords: 'chan leg ban chan foot goi nhan vat mannequin' },
+  { id: 'torso',      label: 'Thân người',         icon: '🦺', keywords: 'than torso nguc bung hong body nhan vat mannequin' },
+  { id: 'figure',     label: 'Người mẫu toàn thân', icon: '🧍', keywords: 'nguoi figure body toan than nhan vat mannequin' }
 ];
 var SHAPE_BY_ID = {};
 SHAPE_LIBRARY.forEach(function (s) { SHAPE_BY_ID[s.id] = s; });
@@ -35,8 +40,8 @@ var scene = {
       color: Physics.col.fromHex('#3b82f6'), metallic: 0.85, roughness: 0.2 }
   ],
   lights: [
-    { id: 1, pos: { x: -2.2, y: 2.2, z: 2.2 }, color: Physics.col.fromHex('#ffffff'), intensity: 7 },
-    { id: 2, pos: { x: 2.2, y: -0.8, z: 1.8 }, color: Physics.col.fromHex('#ff6a00'), intensity: 3.5 }
+    { id: 1, pos: { x: -2.2, y: 2.2, z: 2.2 }, color: Physics.col.fromHex('#ffffff'), intensity: 1.8 },
+    { id: 2, pos: { x: 2.2, y: -0.8, z: 1.8 }, color: Physics.col.fromHex('#ff6a00'), intensity: 1.2 }
   ]
 };
 
